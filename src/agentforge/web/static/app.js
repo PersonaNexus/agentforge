@@ -253,6 +253,115 @@ function renderHumanElements(skills, responsibilities) {
     </div>`;
 }
 
+// ========== AGENT VALUE ESTIMATOR (client-side mirror of backend) ==========
+const CATEGORY_WEIGHTS = { tool: 0.90, hard: 0.75, domain: 0.60, soft: 0.30 };
+const VALUE_IMPORTANCE_WEIGHTS = { required: 1.0, preferred: 0.6, nice_to_have: 0.25 };
+const PROFICIENCY_DISCOUNTS = { beginner: 0.0, intermediate: 0.05, advanced: 0.12, expert: 0.20 };
+
+function computeAgentValue(data, salaryMin, salaryMax) {
+    const sMin = salaryMin || data.salary_min;
+    const sMax = salaryMax || data.salary_max;
+    if (!sMin && !sMax) return null;
+
+    const midpoint = (sMin && sMax) ? (sMin + sMax) / 2 : (sMin || sMax);
+    const automation = data.automation_potential || 0;
+    const baseValue = midpoint * automation;
+
+    // Skill factor
+    let skillFactor = 0.5;
+    if (data.skills && data.skills.length) {
+        let totalW = 0, weightedSum = 0;
+        data.skills.forEach(s => {
+            const imp = VALUE_IMPORTANCE_WEIGHTS[s.importance] || 0.5;
+            const cat = CATEGORY_WEIGHTS[s.category] || 0.5;
+            totalW += imp;
+            weightedSum += imp * cat;
+        });
+        skillFactor = totalW > 0 ? weightedSum / totalW : 0.5;
+    }
+
+    // Proficiency discount
+    let profDiscount = 0;
+    if (data.skills && data.skills.length) {
+        let total = 0;
+        data.skills.forEach(s => { total += PROFICIENCY_DISCOUNTS[s.proficiency] || 0.05; });
+        profDiscount = total / data.skills.length;
+    }
+
+    // Human penalty
+    let humanPenalty = 0;
+    if (data.responsibilities && data.responsibilities.length) {
+        const humanCount = data.responsibilities.filter(r =>
+            HUMAN_KEYWORDS.some(kw => r.toLowerCase().includes(kw))
+        ).length;
+        humanPenalty = (humanCount / data.responsibilities.length) * 0.5;
+    }
+
+    // Availability bonus
+    const availBonus = 1.0 + (automation * 0.3);
+
+    const estimated = Math.max(0, baseValue * skillFactor * (1 - profDiscount) * (1 - humanPenalty) * availBonus);
+
+    return {
+        estimated_value: Math.round(estimated),
+        salary_midpoint: Math.round(midpoint),
+        base_value: Math.round(baseValue),
+        skill_factor: skillFactor,
+        proficiency_discount: profDiscount,
+        human_penalty: humanPenalty,
+        availability_bonus: availBonus,
+    };
+}
+
+function formatCurrency(n) {
+    return '$' + n.toLocaleString('en-US');
+}
+
+function renderAgentValue(valueEstimate) {
+    if (!valueEstimate) return '';
+    const v = valueEstimate;
+    const ratio = v.salary_midpoint > 0 ? (v.estimated_value / v.salary_midpoint * 100).toFixed(0) : 0;
+
+    // Determine color based on value-to-salary ratio
+    const cls = ratio >= 50 ? 'value-high' : ratio >= 25 ? 'value-mid' : 'value-low';
+
+    return `<div class="panel panel-value ${cls}">
+        <div class="panel-title">Estimated Agent Value</div>
+        <div class="value-headline">
+            <span class="value-amount">${formatCurrency(v.estimated_value)}</span>
+            <span class="value-period">/year</span>
+        </div>
+        <small>Based on ${formatCurrency(v.salary_midpoint)} salary midpoint</small>
+        <div class="value-factors">
+            <div class="value-factor">
+                <span class="value-factor-label">Base value</span>
+                <span class="value-factor-value">${formatCurrency(v.base_value)}</span>
+                <small>salary &times; ${Math.round((v.base_value / v.salary_midpoint) * 100)}% automation</small>
+            </div>
+            <div class="value-factor">
+                <span class="value-factor-label">Skill factor</span>
+                <span class="value-factor-value">&times;${v.skill_factor.toFixed(2)}</span>
+                <small>category automation weight</small>
+            </div>
+            <div class="value-factor">
+                <span class="value-factor-label">Proficiency discount</span>
+                <span class="value-factor-value">&minus;${(v.proficiency_discount * 100).toFixed(1)}%</span>
+                <small>expert requirements harder to replicate</small>
+            </div>
+            <div class="value-factor">
+                <span class="value-factor-label">Human penalty</span>
+                <span class="value-factor-value">&minus;${(v.human_penalty * 100).toFixed(1)}%</span>
+                <small>responsibilities requiring judgment</small>
+            </div>
+            <div class="value-factor">
+                <span class="value-factor-label">Availability bonus</span>
+                <span class="value-factor-value">&times;${v.availability_bonus.toFixed(2)}</span>
+                <small>24/7 operation multiplier</small>
+            </div>
+        </div>
+    </div>`;
+}
+
 function renderGapAnalysis(score, gaps) {
     if (score == null) return '';
     const pct = Math.round(score * 100);
@@ -278,12 +387,14 @@ function renderSkillScores(scores) {
     <tbody>${rows}</tbody></table>`;
 }
 
-function renderExtractionResult(data) {
+function renderExtractionResult(data, salaryMin, salaryMax) {
+    const valueEstimate = computeAgentValue(data, salaryMin, salaryMax);
     return renderRolePanel(data.role)
         + renderSkillsTable(data.skills)
         + renderHumanElements(data.skills, data.responsibilities)
         + renderSuggestedTraits(data.suggested_traits)
-        + renderAutomation(data.automation_potential, data.automation_rationale);
+        + renderAutomation(data.automation_potential, data.automation_rationale)
+        + renderAgentValue(valueEstimate);
 }
 
 function renderCultureProfile(profile) {
@@ -377,6 +488,11 @@ document.getElementById('extract-form').addEventListener('submit', async (e) => 
     hideEmptyState('extract');
 
     const formData = new FormData(e.target);
+    const userSalaryMin = parseFloat(formData.get('salary_min')) || null;
+    const userSalaryMax = parseFloat(formData.get('salary_max')) || null;
+    // Remove salary fields from FormData (not needed by backend extract endpoint)
+    formData.delete('salary_min');
+    formData.delete('salary_max');
     try {
         const resp = await fetch('/api/extract', { method: 'POST', body: formData });
         const data = await resp.json();
@@ -384,7 +500,7 @@ document.getElementById('extract-form').addEventListener('submit', async (e) => 
             results.innerHTML = `<div class="panel panel-red"><div class="panel-title">Error</div>${esc(data.detail || 'Unknown error')}</div>`;
         } else {
             _lastExtractResult = data;
-            results.innerHTML = renderDownloadBar('Extract') + renderExtractionResult(data);
+            results.innerHTML = renderDownloadBar('Extract') + renderExtractionResult(data, userSalaryMin, userSalaryMax);
         }
         results.hidden = false;
     } catch (err) {
@@ -454,6 +570,10 @@ document.getElementById('forge-form').addEventListener('submit', async (e) => {
     hideEmptyState('forge');
 
     const formData = new FormData(e.target);
+    const forgeSalaryMin = parseFloat(formData.get('salary_min')) || null;
+    const forgeSalaryMax = parseFloat(formData.get('salary_max')) || null;
+    formData.delete('salary_min');
+    formData.delete('salary_max');
     const mode = formData.get('mode');
     initForgeStages(mode);
     progress.hidden = false;
@@ -475,7 +595,7 @@ document.getElementById('forge-form').addEventListener('submit', async (e) => {
                 _lastForgeResult = data;
                 const bp = data.blueprint;
                 let html = renderDownloadBar('Forge');
-                html += renderExtractionResult(bp.extraction);
+                html += renderExtractionResult(bp.extraction, forgeSalaryMin, forgeSalaryMax);
                 if (data.traits) html += renderTraitBars(data.traits);
                 html += renderGapAnalysis(data.coverage_score, data.coverage_gaps);
                 if (data.skill_scores) html += renderSkillScores(data.skill_scores);

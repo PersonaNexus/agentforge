@@ -360,6 +360,56 @@
 .human-stat-icon { color: var(--af-purple); }
 .ai-stat-icon { color: var(--af-green); }
 
+/* ========== AGENT VALUE PANEL ========== */
+.panel-value { border-color: var(--af-blue); }
+.value-high { border-color: var(--af-green); }
+.value-mid { border-color: var(--af-yellow); }
+.value-low { border-color: var(--af-red); }
+.value-headline {
+    margin: 0.5rem 0;
+}
+.value-amount {
+    font-size: 2rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+}
+.value-high .value-amount { color: var(--af-green); }
+.value-mid .value-amount { color: var(--af-yellow); }
+.value-low .value-amount { color: var(--af-red); }
+.value-period {
+    font-size: 1rem;
+    font-weight: 400;
+    opacity: 0.7;
+}
+.value-factors {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 0.75rem;
+    margin-top: 1rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--pico-muted-border-color);
+}
+.value-factor {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+}
+.value-factor-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    opacity: 0.7;
+}
+.value-factor-value {
+    font-size: 1.1rem;
+    font-weight: 700;
+}
+.value-factor small {
+    font-size: 0.75rem;
+    opacity: 0.6;
+}
+
 /* ========== RESPONSIVE ========== */
 @media (max-width: 768px) {
     /* Stack trait bars vertically */

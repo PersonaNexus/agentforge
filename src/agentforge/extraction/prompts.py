@@ -53,4 +53,9 @@ effective in this role? Only set traits that are clearly relevant — leave othe
 6. **Automation potential**: What percentage (0-1) of this role could an AI agent realistically \
 automate? Consider which tasks are routine vs. requiring human judgment.
 
-7. **Automation rationale**: Brief explanation of what can and cannot be automated."""
+7. **Automation rationale**: Brief explanation of what can and cannot be automated.
+
+8. **Salary range**: If the job description mentions a salary or compensation range, extract \
+salary_min and salary_max as annual USD amounts (numeric values only, no currency symbols). \
+If the JD states an hourly rate, multiply by 2080 to convert to annual. \
+If no salary information is provided, set both to null."""

@@ -45,6 +45,18 @@
                         </optgroup>
                     </select>
                 </label>
+                <details>
+                    <summary>Salary Range (optional)</summary>
+                    <div class="grid">
+                        <label>Min Annual Salary ($)
+                            <input type="number" name="salary_min" placeholder="e.g. 80000" min="0" step="1000">
+                        </label>
+                        <label>Max Annual Salary ($)
+                            <input type="number" name="salary_max" placeholder="e.g. 120000" min="0" step="1000">
+                        </label>
+                    </div>
+                    <small>Provide a salary range to see an estimated agent value. If the JD includes salary, it will be extracted automatically.</small>
+                </details>
                 <button type="submit" id="extract-btn">Extract Skills</button>
             </form>
             <div id="extract-results" class="results-area" hidden></div>
@@ -95,6 +107,18 @@
                         Skip SKILL.md generation
                     </label>
                 </fieldset>
+                <details>
+                    <summary>Salary Range (optional)</summary>
+                    <div class="grid">
+                        <label>Min Annual Salary ($)
+                            <input type="number" name="salary_min" placeholder="e.g. 80000" min="0" step="1000">
+                        </label>
+                        <label>Max Annual Salary ($)
+                            <input type="number" name="salary_max" placeholder="e.g. 120000" min="0" step="1000">
+                        </label>
+                    </div>
+                    <small>Provide a salary range to see an estimated agent value. If the JD includes salary, it will be extracted automatically.</small>
+                </details>
                 <button type="submit" id="forge-btn">Forge Agent</button>
             </form>
             <div id="forge-progress" class="progress-area" hidden>
