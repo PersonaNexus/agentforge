@@ -28,13 +28,17 @@ function renderRolePanel(role) {
 
 function renderSkillsTable(skills) {
     if (!skills || !skills.length) return '';
-    const rows = skills.map(s => `<tr>
-        <td>${esc(s.name)}</td>
+    const rows = skills.map(s => {
+        const isHuman = s.category === 'soft';
+        const badge = isHuman ? ' <span class="human-badge" title="Requires human judgment">Human</span>' : '';
+        return `<tr class="${isHuman ? 'human-row' : ''}">
+        <td>${esc(s.name)}${badge}</td>
         <td><span class="cat-${s.category}">${esc(s.category)}</span></td>
         <td>${esc(s.proficiency)}</td>
         <td>${esc(s.importance)}</td>
         <td><small>${esc(s.context || '')}</small></td>
-    </tr>`).join('');
+    </tr>`;
+    }).join('');
     return `<table>
         <thead><tr><th>Skill</th><th>Category</th><th>Proficiency</th><th>Importance</th><th>Context</th></tr></thead>
         <tbody>${rows}</tbody>
@@ -75,6 +79,69 @@ function renderAutomation(potential, rationale) {
     </div>`;
 }
 
+// Keywords that flag responsibilities as requiring human judgment
+const HUMAN_KEYWORDS = [
+    "mentor", "lead", "negotiate", "present", "interview",
+    "hire", "fire", "counsel", "coach", "empathize",
+    "relationship", "stakeholder", "executive",
+];
+
+function renderHumanElements(skills, responsibilities) {
+    const humanSkills = (skills || []).filter(s => s.category === 'soft');
+    const humanResponsibilities = (responsibilities || []).filter(r =>
+        HUMAN_KEYWORDS.some(kw => r.toLowerCase().includes(kw))
+    );
+
+    if (!humanSkills.length && !humanResponsibilities.length) return '';
+
+    let content = '';
+
+    if (humanSkills.length) {
+        const skillItems = humanSkills.map(s => {
+            const importanceCls = s.importance === 'required' ? 'human-critical' : 'human-moderate';
+            return `<li class="${importanceCls}">
+                <strong>${esc(s.name)}</strong>
+                ${s.importance === 'required' ? '<span class="human-critical-tag">Critical</span>' : ''}
+                ${s.context ? `<br><small>${esc(s.context)}</small>` : ''}
+            </li>`;
+        }).join('');
+        content += `<div class="human-section">
+            <div class="human-section-title">Skills Requiring Human Judgment</div>
+            <ul class="human-list">${skillItems}</ul>
+        </div>`;
+    }
+
+    if (humanResponsibilities.length) {
+        const respItems = humanResponsibilities.map(r => {
+            const matched = HUMAN_KEYWORDS.filter(kw => r.toLowerCase().includes(kw));
+            return `<li>
+                ${esc(r)}
+                <br><small class="human-keywords">Keywords: ${matched.join(', ')}</small>
+            </li>`;
+        }).join('');
+        content += `<div class="human-section">
+            <div class="human-section-title">Responsibilities Requiring Human Element</div>
+            <ul class="human-list">${respItems}</ul>
+        </div>`;
+    }
+
+    const total = (skills || []).length;
+    const humanCount = humanSkills.length + humanResponsibilities.length;
+    const aiCount = total - humanSkills.length;
+
+    content += `<div class="human-summary">
+        <span class="human-stat"><span class="human-stat-icon">&#9679;</span> ${humanSkills.length} human-critical skill${humanSkills.length !== 1 ? 's' : ''}</span>
+        <span class="human-stat"><span class="ai-stat-icon">&#9679;</span> ${aiCount} AI-augmentable skill${aiCount !== 1 ? 's' : ''}</span>
+        <span class="human-stat"><span class="human-stat-icon">&#9679;</span> ${humanResponsibilities.length} human-dependent responsibilit${humanResponsibilities.length !== 1 ? 'ies' : 'y'}</span>
+    </div>`;
+
+    return `<div class="panel panel-human">
+        <div class="panel-title">Human Elements</div>
+        <small>These areas are best handled by humans and should not be fully delegated to AI agents.</small>
+        ${content}
+    </div>`;
+}
+
 function renderGapAnalysis(score, gaps) {
     if (score == null) return '';
     const pct = Math.round(score * 100);
@@ -103,6 +170,7 @@ function renderSkillScores(scores) {
 function renderExtractionResult(data) {
     return renderRolePanel(data.role)
         + renderSkillsTable(data.skills)
+        + renderHumanElements(data.skills, data.responsibilities)
         + renderSuggestedTraits(data.suggested_traits)
         + renderAutomation(data.automation_potential, data.automation_rationale);
 }
