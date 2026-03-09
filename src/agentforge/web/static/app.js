@@ -258,6 +258,42 @@ const CATEGORY_WEIGHTS = { tool: 0.90, hard: 0.75, domain: 0.60, soft: 0.30 };
 const VALUE_IMPORTANCE_WEIGHTS = { required: 1.0, preferred: 0.6, nice_to_have: 0.25 };
 const PROFICIENCY_DISCOUNTS = { beginner: 0.0, intermediate: 0.05, advanced: 0.12, expert: 0.20 };
 
+// Token cost estimation constants
+const CATEGORY_DAILY_INTERACTIONS = { tool: 80, hard: 40, domain: 20, soft: 15 };
+const CATEGORY_TOKENS_PER_CALL = { tool: 800, hard: 1500, domain: 2500, soft: 3000 };
+const PROFICIENCY_TOKEN_MULTIPLIERS = { beginner: 0.7, intermediate: 1.0, advanced: 1.3, expert: 1.6 };
+const DEFAULT_COST_PER_1K_TOKENS = 0.008;
+const DEFAULT_MONTHLY_INFRA = 200;
+const WORKING_DAYS_PER_MONTH = 22;
+
+function estimateMonthlyTokens(data) {
+    const skills = data.skills || [];
+    if (!skills.length) return 1000000;
+
+    let totalDaily = 0;
+    skills.forEach(s => {
+        const dailyCalls = CATEGORY_DAILY_INTERACTIONS[s.category] || 30;
+        const tokensPerCall = CATEGORY_TOKENS_PER_CALL[s.category] || 1500;
+        const profMult = PROFICIENCY_TOKEN_MULTIPLIERS[s.proficiency] || 1.0;
+        const impWeight = VALUE_IMPORTANCE_WEIGHTS[s.importance] || 0.5;
+        totalDaily += dailyCalls * tokensPerCall * profMult * impWeight;
+    });
+
+    const numSkills = skills.length;
+    let effectiveDaily;
+    if (numSkills > 1) {
+        const avgDaily = totalDaily / numSkills;
+        effectiveDaily = avgDaily * (1.0 + 0.6 * (numSkills - 1));
+    } else {
+        effectiveDaily = totalDaily;
+    }
+
+    const automation = data.automation_potential || 0;
+    effectiveDaily *= Math.max(0.1, automation);
+
+    return Math.round(effectiveDaily * WORKING_DAYS_PER_MONTH);
+}
+
 function computeAgentValue(data, salaryMin, salaryMax) {
     const sMin = salaryMin || data.salary_min;
     const sMax = salaryMax || data.salary_max;
@@ -300,21 +336,44 @@ function computeAgentValue(data, salaryMin, salaryMax) {
     // Availability bonus
     const availBonus = 1.0 + (automation * 0.3);
 
-    const estimated = Math.max(0, baseValue * skillFactor * (1 - profDiscount) * (1 - humanPenalty) * availBonus);
+    const grossValue = Math.max(0, baseValue * skillFactor * (1 - profDiscount) * (1 - humanPenalty) * availBonus);
+
+    // Cost modeling
+    const monthlyTokens = estimateMonthlyTokens(data);
+    const monthlyTokenCost = (monthlyTokens / 1000) * DEFAULT_COST_PER_1K_TOKENS;
+    const monthlyTotalCost = monthlyTokenCost + DEFAULT_MONTHLY_INFRA;
+    const annualTotalCost = monthlyTotalCost * 12;
+    const netAnnualValue = grossValue - annualTotalCost;
+    const roiMultiple = annualTotalCost > 0 ? netAnnualValue / annualTotalCost : 0;
+    const paybackMonths = grossValue > 0 ? annualTotalCost / (grossValue / 12) : 0;
 
     return {
-        estimated_value: Math.round(estimated),
+        estimated_value: Math.round(grossValue),
         salary_midpoint: Math.round(midpoint),
         base_value: Math.round(baseValue),
         skill_factor: skillFactor,
         proficiency_discount: profDiscount,
         human_penalty: humanPenalty,
         availability_bonus: availBonus,
+        monthly_token_cost: Math.round(monthlyTokenCost),
+        monthly_infra_cost: DEFAULT_MONTHLY_INFRA,
+        monthly_total_cost: Math.round(monthlyTotalCost),
+        annual_total_cost: Math.round(annualTotalCost),
+        net_annual_value: Math.round(netAnnualValue),
+        roi_multiple: roiMultiple,
+        payback_months: paybackMonths,
+        estimated_monthly_tokens: monthlyTokens,
     };
 }
 
 function formatCurrency(n) {
     return '$' + n.toLocaleString('en-US');
+}
+
+function formatTokens(n) {
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+    if (n >= 1000) return (n / 1000).toFixed(0) + 'K';
+    return n.toString();
 }
 
 function renderAgentValue(valueEstimate) {
@@ -324,12 +383,13 @@ function renderAgentValue(valueEstimate) {
 
     // Determine color based on value-to-salary ratio
     const cls = ratio >= 50 ? 'value-high' : ratio >= 25 ? 'value-mid' : 'value-low';
+    const roiCls = v.roi_multiple >= 5 ? 'value-high' : v.roi_multiple >= 2 ? 'value-mid' : 'value-low';
 
     return `<div class="panel panel-value ${cls}">
-        <div class="panel-title">Estimated Agent Value</div>
+        <div class="panel-title">Agent Value &amp; Cost Analysis</div>
         <div class="value-headline">
             <span class="value-amount">${formatCurrency(v.estimated_value)}</span>
-            <span class="value-period">/year</span>
+            <span class="value-period">/year gross</span>
         </div>
         <small>Based on ${formatCurrency(v.salary_midpoint)} salary midpoint</small>
         <div class="value-factors">
@@ -357,6 +417,49 @@ function renderAgentValue(valueEstimate) {
                 <span class="value-factor-label">Availability bonus</span>
                 <span class="value-factor-value">&times;${v.availability_bonus.toFixed(2)}</span>
                 <small>24/7 operation multiplier</small>
+            </div>
+        </div>
+        <div class="value-cost-section">
+            <div class="panel-title">Operating Costs</div>
+            <div class="value-factors">
+                <div class="value-factor">
+                    <span class="value-factor-label">Token usage</span>
+                    <span class="value-factor-value">${formatTokens(v.estimated_monthly_tokens)}/mo</span>
+                    <small>based on skill mix &amp; proficiency</small>
+                </div>
+                <div class="value-factor">
+                    <span class="value-factor-label">Token cost</span>
+                    <span class="value-factor-value">${formatCurrency(v.monthly_token_cost)}/mo</span>
+                    <small>at $${DEFAULT_COST_PER_1K_TOKENS}/1K tokens</small>
+                </div>
+                <div class="value-factor">
+                    <span class="value-factor-label">Infrastructure</span>
+                    <span class="value-factor-value">${formatCurrency(v.monthly_infra_cost)}/mo</span>
+                    <small>monitoring, orchestration, maintenance</small>
+                </div>
+                <div class="value-factor">
+                    <span class="value-factor-label">Annual operating cost</span>
+                    <span class="value-factor-value">${formatCurrency(v.annual_total_cost)}/yr</span>
+                    <small>${formatCurrency(v.monthly_total_cost)}/mo total</small>
+                </div>
+            </div>
+        </div>
+        <div class="value-net-section ${roiCls}">
+            <div class="value-headline">
+                <span class="value-amount">${formatCurrency(v.net_annual_value)}</span>
+                <span class="value-period">/year net value</span>
+            </div>
+            <div class="value-factors">
+                <div class="value-factor">
+                    <span class="value-factor-label">ROI</span>
+                    <span class="value-factor-value">${v.roi_multiple.toFixed(1)}x</span>
+                    <small>net value / operating cost</small>
+                </div>
+                <div class="value-factor">
+                    <span class="value-factor-label">Payback period</span>
+                    <span class="value-factor-value">${v.payback_months.toFixed(1)} months</span>
+                    <small>time to recoup annual costs</small>
+                </div>
             </div>
         </div>
     </div>`;

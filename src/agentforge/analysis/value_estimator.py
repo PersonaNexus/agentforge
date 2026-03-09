@@ -43,6 +43,41 @@ _HUMAN_KEYWORDS = [
     "relationship", "stakeholder", "executive",
 ]
 
+# --- Token cost estimation constants ---
+
+# Estimated daily interactions by category (calls/day the agent would make)
+_CATEGORY_DAILY_INTERACTIONS: dict[SkillCategory, int] = {
+    SkillCategory.TOOL: 80,     # High frequency, structured calls
+    SkillCategory.HARD: 40,     # Moderate frequency, medium complexity
+    SkillCategory.DOMAIN: 20,   # Lower frequency, longer context
+    SkillCategory.SOFT: 15,     # Fewest calls, longest conversations
+}
+
+# Average tokens per interaction by category
+_CATEGORY_TOKENS_PER_CALL: dict[SkillCategory, int] = {
+    SkillCategory.TOOL: 800,    # Shorter, structured I/O
+    SkillCategory.HARD: 1500,   # Code generation, analysis
+    SkillCategory.DOMAIN: 2500, # Long context, domain reasoning
+    SkillCategory.SOFT: 3000,   # Extended dialogue, nuance
+}
+
+# Proficiency multiplier for token usage (expert work = more complex chains)
+_PROFICIENCY_TOKEN_MULTIPLIERS: dict[SkillProficiency, float] = {
+    SkillProficiency.BEGINNER: 0.7,
+    SkillProficiency.INTERMEDIATE: 1.0,
+    SkillProficiency.ADVANCED: 1.3,
+    SkillProficiency.EXPERT: 1.6,
+}
+
+# Default blended cost per 1K tokens (input + output average, USD)
+_DEFAULT_COST_PER_1K_TOKENS = 0.008
+
+# Monthly infrastructure overhead (monitoring, orchestration, maintenance)
+_DEFAULT_MONTHLY_INFRA_OVERHEAD = 200.0
+
+# Working days per month
+_WORKING_DAYS_PER_MONTH = 22
+
 
 @dataclass
 class ValueEstimate:
@@ -56,6 +91,16 @@ class ValueEstimate:
     human_penalty: float
     availability_bonus: float
 
+    # Cost modeling fields
+    monthly_token_cost: float = 0.0
+    monthly_infra_cost: float = 0.0
+    monthly_total_cost: float = 0.0
+    annual_total_cost: float = 0.0
+    net_annual_value: float = 0.0
+    roi_multiple: float = 0.0
+    payback_months: float = 0.0
+    estimated_monthly_tokens: int = 0
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "estimated_value": round(self.estimated_value),
@@ -65,6 +110,14 @@ class ValueEstimate:
             "proficiency_discount": round(self.proficiency_discount, 3),
             "human_penalty": round(self.human_penalty, 3),
             "availability_bonus": round(self.availability_bonus, 3),
+            "monthly_token_cost": round(self.monthly_token_cost),
+            "monthly_infra_cost": round(self.monthly_infra_cost),
+            "monthly_total_cost": round(self.monthly_total_cost),
+            "annual_total_cost": round(self.annual_total_cost),
+            "net_annual_value": round(self.net_annual_value),
+            "roi_multiple": round(self.roi_multiple, 1),
+            "payback_months": round(self.payback_months, 1),
+            "estimated_monthly_tokens": self.estimated_monthly_tokens,
         }
 
 
@@ -76,11 +129,17 @@ class AgentValueEstimator:
         extraction: ExtractionResult,
         salary_min: float | None = None,
         salary_max: float | None = None,
+        cost_per_1k_tokens: float | None = None,
+        monthly_infra_override: float | None = None,
     ) -> ValueEstimate | None:
         """Compute estimated agent value based on extraction data and salary.
 
         Uses salary from arguments first, falls back to extraction fields.
         Returns None if no salary information is available.
+
+        Args:
+            cost_per_1k_tokens: Override blended cost per 1K tokens (default $0.008).
+            monthly_infra_override: Override monthly infrastructure cost (default $200).
         """
         s_min = salary_min or extraction.salary_min
         s_max = salary_max or extraction.salary_max
@@ -120,14 +179,36 @@ class AgentValueEstimator:
             * availability_bonus
         )
 
+        gross_value = max(0.0, estimated_value)
+
+        # Cost modeling
+        token_cost_rate = cost_per_1k_tokens if cost_per_1k_tokens is not None else _DEFAULT_COST_PER_1K_TOKENS
+        monthly_infra = monthly_infra_override if monthly_infra_override is not None else _DEFAULT_MONTHLY_INFRA_OVERHEAD
+
+        monthly_tokens = self._estimate_monthly_tokens(extraction)
+        monthly_token_cost = (monthly_tokens / 1000) * token_cost_rate
+        monthly_total_cost = monthly_token_cost + monthly_infra
+        annual_total_cost = monthly_total_cost * 12
+        net_annual_value = gross_value - annual_total_cost
+        roi_multiple = net_annual_value / annual_total_cost if annual_total_cost > 0 else 0.0
+        payback_months = annual_total_cost / (gross_value / 12) if gross_value > 0 else 0.0
+
         return ValueEstimate(
-            estimated_value=max(0.0, estimated_value),
+            estimated_value=gross_value,
             salary_midpoint=salary_midpoint,
             base_value=base_value,
             skill_factor=skill_factor,
             proficiency_discount=proficiency_discount,
             human_penalty=human_penalty,
             availability_bonus=availability_bonus,
+            monthly_token_cost=monthly_token_cost,
+            monthly_infra_cost=monthly_infra,
+            monthly_total_cost=monthly_total_cost,
+            annual_total_cost=annual_total_cost,
+            net_annual_value=net_annual_value,
+            roi_multiple=roi_multiple,
+            payback_months=payback_months,
+            estimated_monthly_tokens=monthly_tokens,
         )
 
     def _compute_skill_factor(self, extraction: ExtractionResult) -> float:
@@ -156,6 +237,39 @@ class AgentValueEstimator:
             for s in extraction.skills
         )
         return total / len(extraction.skills)
+
+    def _estimate_monthly_tokens(self, extraction: ExtractionResult) -> int:
+        """Estimate monthly token usage based on skill mix and proficiency."""
+        if not extraction.skills:
+            # Conservative default: moderate workload
+            return 1_000_000
+
+        total_daily_tokens = 0.0
+        for skill in extraction.skills:
+            daily_calls = _CATEGORY_DAILY_INTERACTIONS.get(skill.category, 30)
+            tokens_per_call = _CATEGORY_TOKENS_PER_CALL.get(skill.category, 1500)
+            prof_mult = _PROFICIENCY_TOKEN_MULTIPLIERS.get(skill.proficiency, 1.0)
+            importance_weight = _IMPORTANCE_WEIGHTS.get(skill.importance, 0.5)
+
+            # Scale interactions by importance (required skills used more)
+            daily_tokens = daily_calls * tokens_per_call * prof_mult * importance_weight
+            total_daily_tokens += daily_tokens
+
+        # Normalize: don't count each skill as a full workload, use diminishing returns
+        # First skill = full weight, additional skills add ~60% each (overlap)
+        num_skills = len(extraction.skills)
+        if num_skills > 1:
+            avg_daily = total_daily_tokens / num_skills
+            effective_daily = avg_daily * (1.0 + 0.6 * (num_skills - 1))
+        else:
+            effective_daily = total_daily_tokens
+
+        # Scale by automation potential (low automation = fewer agent interactions)
+        automation = extraction.automation_potential or 0.0
+        effective_daily *= max(0.1, automation)
+
+        monthly_tokens = int(effective_daily * _WORKING_DAYS_PER_MONTH)
+        return monthly_tokens
 
     def _compute_human_penalty(self, extraction: ExtractionResult) -> float:
         """Fraction of responsibilities that require human judgment, scaled."""
