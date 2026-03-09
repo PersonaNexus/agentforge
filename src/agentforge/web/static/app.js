@@ -1,5 +1,25 @@
 /* AgentForge Web UI — Frontend Logic */
 
+// ========== DARK MODE ==========
+function initTheme() {
+    const saved = localStorage.getItem('agentforge-theme');
+    const prefer = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    const theme = saved || prefer;
+    applyTheme(theme);
+}
+
+function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('agentforge-theme', theme);
+    const btn = document.getElementById('theme-toggle');
+    if (btn) btn.textContent = theme === 'dark' ? '\u2600' : '\u263D';
+}
+
+function toggleTheme() {
+    const current = document.documentElement.getAttribute('data-theme');
+    applyTheme(current === 'dark' ? 'light' : 'dark');
+}
+
 // ========== TAB ROUTING ==========
 function showTab(name) {
     document.querySelectorAll('.tab-content').forEach(el => el.hidden = true);
@@ -17,6 +37,17 @@ window.addEventListener('hashchange', () => {
     showTab(hash);
 });
 
+// ========== EMPTY STATE MANAGEMENT ==========
+function hideEmptyState(tabName) {
+    const el = document.getElementById(tabName + '-empty');
+    if (el) el.hidden = true;
+}
+
+function showEmptyState(tabName) {
+    const el = document.getElementById(tabName + '-empty');
+    if (el) el.hidden = false;
+}
+
 // ========== RENDERING HELPERS ==========
 function renderRolePanel(role) {
     return `<div class="panel panel-blue">
@@ -28,7 +59,72 @@ function renderRolePanel(role) {
 
 function renderSkillsTable(skills) {
     if (!skills || !skills.length) return '';
-    const rows = skills.map(s => {
+    const tableId = 'skills-table-' + Date.now();
+    const rows = skills.map((s, i) => {
+        const isHuman = s.category === 'soft';
+        const badge = isHuman ? ' <span class="human-badge" title="Requires human judgment">Human</span>' : '';
+        return `<tr class="${isHuman ? 'human-row' : ''}" data-idx="${i}">
+        <td>${esc(s.name)}${badge}</td>
+        <td><span class="cat-${s.category}">${esc(s.category)}</span></td>
+        <td>${esc(s.proficiency)}</td>
+        <td>${esc(s.importance)}</td>
+        <td><small>${esc(s.context || '')}</small></td>
+    </tr>`;
+    }).join('');
+    return `<table id="${tableId}" data-skills='${JSON.stringify(skills).replace(/'/g, "&#39;")}'>
+        <thead><tr>
+            <th class="sortable-th" data-col="name" onclick="sortSkillsTable('${tableId}','name',this)">Skill <span class="sort-arrow">&#9650;</span></th>
+            <th class="sortable-th" data-col="category" onclick="sortSkillsTable('${tableId}','category',this)">Category <span class="sort-arrow">&#9650;</span></th>
+            <th class="sortable-th" data-col="proficiency" onclick="sortSkillsTable('${tableId}','proficiency',this)">Proficiency <span class="sort-arrow">&#9650;</span></th>
+            <th class="sortable-th" data-col="importance" onclick="sortSkillsTable('${tableId}','importance',this)">Importance <span class="sort-arrow">&#9650;</span></th>
+            <th>Context</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+    </table>`;
+}
+
+// ========== SORTABLE TABLE LOGIC ==========
+const PROFICIENCY_ORDER = { beginner: 0, intermediate: 1, advanced: 2, expert: 3 };
+const IMPORTANCE_ORDER = { nice_to_have: 0, preferred: 1, required: 2 };
+
+window.sortSkillsTable = function(tableId, col, thEl) {
+    const table = document.getElementById(tableId);
+    if (!table) return;
+    const skills = JSON.parse(table.dataset.skills);
+
+    // Toggle direction
+    const currentDir = thEl.getAttribute('data-sort-dir');
+    const dir = currentDir === 'asc' ? 'desc' : 'asc';
+
+    // Clear all headers
+    table.querySelectorAll('.sortable-th').forEach(th => {
+        th.removeAttribute('data-sort-dir');
+        th.querySelector('.sort-arrow').innerHTML = '&#9650;';
+    });
+    thEl.setAttribute('data-sort-dir', dir);
+    thEl.querySelector('.sort-arrow').innerHTML = dir === 'asc' ? '&#9650;' : '&#9660;';
+
+    // Sort
+    const sorted = [...skills].sort((a, b) => {
+        let va, vb;
+        if (col === 'proficiency') {
+            va = PROFICIENCY_ORDER[a[col]] || 0;
+            vb = PROFICIENCY_ORDER[b[col]] || 0;
+        } else if (col === 'importance') {
+            va = IMPORTANCE_ORDER[a[col]] || 0;
+            vb = IMPORTANCE_ORDER[b[col]] || 0;
+        } else {
+            va = (a[col] || '').toLowerCase();
+            vb = (b[col] || '').toLowerCase();
+        }
+        if (va < vb) return dir === 'asc' ? -1 : 1;
+        if (va > vb) return dir === 'asc' ? 1 : -1;
+        return 0;
+    });
+
+    // Re-render tbody
+    const tbody = table.querySelector('tbody');
+    tbody.innerHTML = sorted.map(s => {
         const isHuman = s.category === 'soft';
         const badge = isHuman ? ' <span class="human-badge" title="Requires human judgment">Human</span>' : '';
         return `<tr class="${isHuman ? 'human-row' : ''}">
@@ -39,11 +135,7 @@ function renderSkillsTable(skills) {
         <td><small>${esc(s.context || '')}</small></td>
     </tr>`;
     }).join('');
-    return `<table>
-        <thead><tr><th>Skill</th><th>Category</th><th>Proficiency</th><th>Importance</th><th>Context</th></tr></thead>
-        <tbody>${rows}</tbody>
-    </table>`;
-}
+};
 
 function renderTraitBars(traits) {
     if (!traits || typeof traits !== 'object') return '';
@@ -72,10 +164,29 @@ function renderSuggestedTraits(suggested) {
 function renderAutomation(potential, rationale) {
     const pct = Math.round((potential || 0) * 100);
     const cls = pct < 30 ? 'auto-low' : pct < 60 ? 'auto-mid' : 'auto-high';
+
+    // SVG progress ring
+    const radius = 32;
+    const circumference = 2 * Math.PI * radius;
+    const offset = circumference - (pct / 100) * circumference;
+    const strokeColor = pct < 30 ? 'var(--af-red)' : pct < 60 ? 'var(--af-yellow)' : 'var(--af-green)';
+
     return `<div class="panel ${cls}">
         <div class="panel-title">Automation Assessment</div>
-        <strong>${pct}%</strong> automation potential<br>
-        <small>${esc(rationale || '')}</small>
+        <div class="auto-ring-container">
+            <svg class="auto-ring" viewBox="0 0 80 80">
+                <circle class="auto-ring-bg" cx="40" cy="40" r="${radius}"/>
+                <circle class="auto-ring-fill" cx="40" cy="40" r="${radius}"
+                    stroke="${strokeColor}"
+                    stroke-dasharray="${circumference}"
+                    stroke-dashoffset="${offset}"/>
+                <text class="auto-ring-text" x="40" y="40">${pct}%</text>
+            </svg>
+            <div class="auto-ring-info">
+                <strong>Automation Potential</strong><br>
+                <small>${esc(rationale || '')}</small>
+            </div>
+        </div>
     </div>`;
 }
 
@@ -263,6 +374,7 @@ document.getElementById('extract-form').addEventListener('submit', async (e) => 
     btn.disabled = true;
     results.hidden = true;
     _lastExtractResult = null;
+    hideEmptyState('extract');
 
     const formData = new FormData(e.target);
     try {
@@ -339,6 +451,7 @@ document.getElementById('forge-form').addEventListener('submit', async (e) => {
     btn.setAttribute('aria-busy', 'true');
     btn.disabled = true;
     results.hidden = true;
+    hideEmptyState('forge');
 
     const formData = new FormData(e.target);
     const mode = formData.get('mode');
@@ -421,6 +534,7 @@ document.getElementById('batch-form').addEventListener('submit', async (e) => {
     results.hidden = true;
     progress.hidden = false;
     bar.value = 0;
+    hideEmptyState('batch');
 
     const formData = new FormData(e.target);
     try {
@@ -573,10 +687,10 @@ document.getElementById('settings-form').addEventListener('submit', async (e) =>
         });
         const data = await resp.json();
         document.getElementById('settings-status').innerHTML = data.saved
-            ? '<p style="color:#22c55e">Settings saved successfully.</p>'
-            : '<p style="color:#ef4444">Failed to save settings.</p>';
+            ? '<p style="color:var(--af-success-text)">Settings saved successfully.</p>'
+            : '<p style="color:var(--af-error-text)">Failed to save settings.</p>';
     } catch (err) {
-        document.getElementById('settings-status').innerHTML = `<p style="color:#ef4444">${esc(err.message)}</p>`;
+        document.getElementById('settings-status').innerHTML = `<p style="color:var(--af-error-text)">${esc(err.message)}</p>`;
     }
 });
 
@@ -592,15 +706,17 @@ document.getElementById('validate-key-btn').addEventListener('click', async () =
         });
         const data = await resp.json();
         status.innerHTML = data.valid
-            ? '<small style="color:#22c55e">Valid</small>'
-            : `<small style="color:#ef4444">Invalid: ${esc(data.error)}</small>`;
+            ? '<small style="color:var(--af-success-text)">Valid</small>'
+            : `<small style="color:var(--af-error-text)">Invalid: ${esc(data.error)}</small>`;
     } catch (err) {
-        status.innerHTML = `<small style="color:#ef4444">${esc(err.message)}</small>`;
+        status.innerHTML = `<small style="color:var(--af-error-text)">${esc(err.message)}</small>`;
     }
 });
 
 // ========== INIT ==========
 document.addEventListener('DOMContentLoaded', () => {
+    initTheme();
+    document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
     const hash = location.hash.slice(1) || 'extract';
     showTab(hash);
     loadCultureTemplates();
