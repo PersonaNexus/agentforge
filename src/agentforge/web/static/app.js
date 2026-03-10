@@ -1,5 +1,25 @@
 /* AgentForge Web UI — Frontend Logic */
 
+// ========== DARK MODE ==========
+function initTheme() {
+    const saved = localStorage.getItem('agentforge-theme');
+    const prefer = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    const theme = saved || prefer;
+    applyTheme(theme);
+}
+
+function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('agentforge-theme', theme);
+    const btn = document.getElementById('theme-toggle');
+    if (btn) btn.textContent = theme === 'dark' ? '\u2600' : '\u263D';
+}
+
+function toggleTheme() {
+    const current = document.documentElement.getAttribute('data-theme');
+    applyTheme(current === 'dark' ? 'light' : 'dark');
+}
+
 // ========== TAB ROUTING ==========
 function showTab(name) {
     document.querySelectorAll('.tab-content').forEach(el => el.hidden = true);
@@ -17,6 +37,17 @@ window.addEventListener('hashchange', () => {
     showTab(hash);
 });
 
+// ========== EMPTY STATE MANAGEMENT ==========
+function hideEmptyState(tabName) {
+    const el = document.getElementById(tabName + '-empty');
+    if (el) el.hidden = true;
+}
+
+function showEmptyState(tabName) {
+    const el = document.getElementById(tabName + '-empty');
+    if (el) el.hidden = false;
+}
+
 // ========== RENDERING HELPERS ==========
 function renderRolePanel(role) {
     return `<div class="panel panel-blue">
@@ -28,18 +59,83 @@ function renderRolePanel(role) {
 
 function renderSkillsTable(skills) {
     if (!skills || !skills.length) return '';
-    const rows = skills.map(s => `<tr>
-        <td>${esc(s.name)}</td>
+    const tableId = 'skills-table-' + Date.now();
+    const rows = skills.map((s, i) => {
+        const isHuman = s.category === 'soft';
+        const badge = isHuman ? ' <span class="human-badge" title="Requires human judgment">Human</span>' : '';
+        return `<tr class="${isHuman ? 'human-row' : ''}" data-idx="${i}">
+        <td>${esc(s.name)}${badge}</td>
         <td><span class="cat-${s.category}">${esc(s.category)}</span></td>
         <td>${esc(s.proficiency)}</td>
         <td>${esc(s.importance)}</td>
         <td><small>${esc(s.context || '')}</small></td>
-    </tr>`).join('');
-    return `<table>
-        <thead><tr><th>Skill</th><th>Category</th><th>Proficiency</th><th>Importance</th><th>Context</th></tr></thead>
+    </tr>`;
+    }).join('');
+    return `<table id="${tableId}" data-skills='${JSON.stringify(skills).replace(/'/g, "&#39;")}'>
+        <thead><tr>
+            <th class="sortable-th" data-col="name" onclick="sortSkillsTable('${tableId}','name',this)">Skill <span class="sort-arrow">&#9650;</span></th>
+            <th class="sortable-th" data-col="category" onclick="sortSkillsTable('${tableId}','category',this)">Category <span class="sort-arrow">&#9650;</span></th>
+            <th class="sortable-th" data-col="proficiency" onclick="sortSkillsTable('${tableId}','proficiency',this)">Proficiency <span class="sort-arrow">&#9650;</span></th>
+            <th class="sortable-th" data-col="importance" onclick="sortSkillsTable('${tableId}','importance',this)">Importance <span class="sort-arrow">&#9650;</span></th>
+            <th>Context</th>
+        </tr></thead>
         <tbody>${rows}</tbody>
     </table>`;
 }
+
+// ========== SORTABLE TABLE LOGIC ==========
+const PROFICIENCY_ORDER = { beginner: 0, intermediate: 1, advanced: 2, expert: 3 };
+const IMPORTANCE_ORDER = { nice_to_have: 0, preferred: 1, required: 2 };
+
+window.sortSkillsTable = function(tableId, col, thEl) {
+    const table = document.getElementById(tableId);
+    if (!table) return;
+    const skills = JSON.parse(table.dataset.skills);
+
+    // Toggle direction
+    const currentDir = thEl.getAttribute('data-sort-dir');
+    const dir = currentDir === 'asc' ? 'desc' : 'asc';
+
+    // Clear all headers
+    table.querySelectorAll('.sortable-th').forEach(th => {
+        th.removeAttribute('data-sort-dir');
+        th.querySelector('.sort-arrow').innerHTML = '&#9650;';
+    });
+    thEl.setAttribute('data-sort-dir', dir);
+    thEl.querySelector('.sort-arrow').innerHTML = dir === 'asc' ? '&#9650;' : '&#9660;';
+
+    // Sort
+    const sorted = [...skills].sort((a, b) => {
+        let va, vb;
+        if (col === 'proficiency') {
+            va = PROFICIENCY_ORDER[a[col]] || 0;
+            vb = PROFICIENCY_ORDER[b[col]] || 0;
+        } else if (col === 'importance') {
+            va = IMPORTANCE_ORDER[a[col]] || 0;
+            vb = IMPORTANCE_ORDER[b[col]] || 0;
+        } else {
+            va = (a[col] || '').toLowerCase();
+            vb = (b[col] || '').toLowerCase();
+        }
+        if (va < vb) return dir === 'asc' ? -1 : 1;
+        if (va > vb) return dir === 'asc' ? 1 : -1;
+        return 0;
+    });
+
+    // Re-render tbody
+    const tbody = table.querySelector('tbody');
+    tbody.innerHTML = sorted.map(s => {
+        const isHuman = s.category === 'soft';
+        const badge = isHuman ? ' <span class="human-badge" title="Requires human judgment">Human</span>' : '';
+        return `<tr class="${isHuman ? 'human-row' : ''}">
+        <td>${esc(s.name)}${badge}</td>
+        <td><span class="cat-${s.category}">${esc(s.category)}</span></td>
+        <td>${esc(s.proficiency)}</td>
+        <td>${esc(s.importance)}</td>
+        <td><small>${esc(s.context || '')}</small></td>
+    </tr>`;
+    }).join('');
+};
 
 function renderTraitBars(traits) {
     if (!traits || typeof traits !== 'object') return '';
@@ -68,10 +164,304 @@ function renderSuggestedTraits(suggested) {
 function renderAutomation(potential, rationale) {
     const pct = Math.round((potential || 0) * 100);
     const cls = pct < 30 ? 'auto-low' : pct < 60 ? 'auto-mid' : 'auto-high';
+
+    // SVG progress ring
+    const radius = 32;
+    const circumference = 2 * Math.PI * radius;
+    const offset = circumference - (pct / 100) * circumference;
+    const strokeColor = pct < 30 ? 'var(--af-red)' : pct < 60 ? 'var(--af-yellow)' : 'var(--af-green)';
+
     return `<div class="panel ${cls}">
         <div class="panel-title">Automation Assessment</div>
-        <strong>${pct}%</strong> automation potential<br>
-        <small>${esc(rationale || '')}</small>
+        <div class="auto-ring-container">
+            <svg class="auto-ring" viewBox="0 0 80 80">
+                <circle class="auto-ring-bg" cx="40" cy="40" r="${radius}"/>
+                <circle class="auto-ring-fill" cx="40" cy="40" r="${radius}"
+                    stroke="${strokeColor}"
+                    stroke-dasharray="${circumference}"
+                    stroke-dashoffset="${offset}"/>
+                <text class="auto-ring-text" x="40" y="40">${pct}%</text>
+            </svg>
+            <div class="auto-ring-info">
+                <strong>Automation Potential</strong><br>
+                <small>${esc(rationale || '')}</small>
+            </div>
+        </div>
+    </div>`;
+}
+
+// Keywords that flag responsibilities as requiring human judgment
+const HUMAN_KEYWORDS = [
+    "mentor", "lead", "negotiate", "present", "interview",
+    "hire", "fire", "counsel", "coach", "empathize",
+    "relationship", "stakeholder", "executive",
+];
+
+function renderHumanElements(skills, responsibilities) {
+    const humanSkills = (skills || []).filter(s => s.category === 'soft');
+    const humanResponsibilities = (responsibilities || []).filter(r =>
+        HUMAN_KEYWORDS.some(kw => r.toLowerCase().includes(kw))
+    );
+
+    if (!humanSkills.length && !humanResponsibilities.length) return '';
+
+    let content = '';
+
+    if (humanSkills.length) {
+        const skillItems = humanSkills.map(s => {
+            const importanceCls = s.importance === 'required' ? 'human-critical' : 'human-moderate';
+            return `<li class="${importanceCls}">
+                <strong>${esc(s.name)}</strong>
+                ${s.importance === 'required' ? '<span class="human-critical-tag">Critical</span>' : ''}
+                ${s.context ? `<br><small>${esc(s.context)}</small>` : ''}
+            </li>`;
+        }).join('');
+        content += `<div class="human-section">
+            <div class="human-section-title">Skills Requiring Human Judgment</div>
+            <ul class="human-list">${skillItems}</ul>
+        </div>`;
+    }
+
+    if (humanResponsibilities.length) {
+        const respItems = humanResponsibilities.map(r => {
+            const matched = HUMAN_KEYWORDS.filter(kw => r.toLowerCase().includes(kw));
+            return `<li>
+                ${esc(r)}
+                <br><small class="human-keywords">Keywords: ${matched.join(', ')}</small>
+            </li>`;
+        }).join('');
+        content += `<div class="human-section">
+            <div class="human-section-title">Responsibilities Requiring Human Element</div>
+            <ul class="human-list">${respItems}</ul>
+        </div>`;
+    }
+
+    const total = (skills || []).length;
+    const humanCount = humanSkills.length + humanResponsibilities.length;
+    const aiCount = total - humanSkills.length;
+
+    content += `<div class="human-summary">
+        <span class="human-stat"><span class="human-stat-icon">&#9679;</span> ${humanSkills.length} human-critical skill${humanSkills.length !== 1 ? 's' : ''}</span>
+        <span class="human-stat"><span class="ai-stat-icon">&#9679;</span> ${aiCount} AI-augmentable skill${aiCount !== 1 ? 's' : ''}</span>
+        <span class="human-stat"><span class="human-stat-icon">&#9679;</span> ${humanResponsibilities.length} human-dependent responsibilit${humanResponsibilities.length !== 1 ? 'ies' : 'y'}</span>
+    </div>`;
+
+    return `<div class="panel panel-human">
+        <div class="panel-title">Human Elements</div>
+        <small>These areas are best handled by humans and should not be fully delegated to AI agents.</small>
+        ${content}
+    </div>`;
+}
+
+// ========== AGENT VALUE ESTIMATOR (client-side mirror of backend) ==========
+const CATEGORY_WEIGHTS = { tool: 0.90, hard: 0.75, domain: 0.60, soft: 0.30 };
+const VALUE_IMPORTANCE_WEIGHTS = { required: 1.0, preferred: 0.6, nice_to_have: 0.25 };
+const PROFICIENCY_DISCOUNTS = { beginner: 0.0, intermediate: 0.05, advanced: 0.12, expert: 0.20 };
+
+// Token cost estimation constants
+const CATEGORY_DAILY_INTERACTIONS = { tool: 80, hard: 40, domain: 20, soft: 15 };
+const CATEGORY_TOKENS_PER_CALL = { tool: 800, hard: 1500, domain: 2500, soft: 3000 };
+const PROFICIENCY_TOKEN_MULTIPLIERS = { beginner: 0.7, intermediate: 1.0, advanced: 1.3, expert: 1.6 };
+const DEFAULT_COST_PER_1K_TOKENS = 0.008;
+const DEFAULT_MONTHLY_INFRA = 200;
+const WORKING_DAYS_PER_MONTH = 22;
+
+function estimateMonthlyTokens(data) {
+    const skills = data.skills || [];
+    if (!skills.length) return 1000000;
+
+    let totalDaily = 0;
+    skills.forEach(s => {
+        const dailyCalls = CATEGORY_DAILY_INTERACTIONS[s.category] || 30;
+        const tokensPerCall = CATEGORY_TOKENS_PER_CALL[s.category] || 1500;
+        const profMult = PROFICIENCY_TOKEN_MULTIPLIERS[s.proficiency] || 1.0;
+        const impWeight = VALUE_IMPORTANCE_WEIGHTS[s.importance] || 0.5;
+        totalDaily += dailyCalls * tokensPerCall * profMult * impWeight;
+    });
+
+    const numSkills = skills.length;
+    let effectiveDaily;
+    if (numSkills > 1) {
+        const avgDaily = totalDaily / numSkills;
+        effectiveDaily = avgDaily * (1.0 + 0.6 * (numSkills - 1));
+    } else {
+        effectiveDaily = totalDaily;
+    }
+
+    const automation = data.automation_potential || 0;
+    effectiveDaily *= Math.max(0.1, automation);
+
+    return Math.round(effectiveDaily * WORKING_DAYS_PER_MONTH);
+}
+
+function computeAgentValue(data, salaryMin, salaryMax) {
+    const sMin = salaryMin || data.salary_min;
+    const sMax = salaryMax || data.salary_max;
+    if (!sMin && !sMax) return null;
+
+    const midpoint = (sMin && sMax) ? (sMin + sMax) / 2 : (sMin || sMax);
+    const automation = data.automation_potential || 0;
+    const baseValue = midpoint * automation;
+
+    // Skill factor
+    let skillFactor = 0.5;
+    if (data.skills && data.skills.length) {
+        let totalW = 0, weightedSum = 0;
+        data.skills.forEach(s => {
+            const imp = VALUE_IMPORTANCE_WEIGHTS[s.importance] || 0.5;
+            const cat = CATEGORY_WEIGHTS[s.category] || 0.5;
+            totalW += imp;
+            weightedSum += imp * cat;
+        });
+        skillFactor = totalW > 0 ? weightedSum / totalW : 0.5;
+    }
+
+    // Proficiency discount
+    let profDiscount = 0;
+    if (data.skills && data.skills.length) {
+        let total = 0;
+        data.skills.forEach(s => { total += PROFICIENCY_DISCOUNTS[s.proficiency] || 0.05; });
+        profDiscount = total / data.skills.length;
+    }
+
+    // Human penalty
+    let humanPenalty = 0;
+    if (data.responsibilities && data.responsibilities.length) {
+        const humanCount = data.responsibilities.filter(r =>
+            HUMAN_KEYWORDS.some(kw => r.toLowerCase().includes(kw))
+        ).length;
+        humanPenalty = (humanCount / data.responsibilities.length) * 0.5;
+    }
+
+    // Availability bonus
+    const availBonus = 1.0 + (automation * 0.3);
+
+    const grossValue = Math.max(0, baseValue * skillFactor * (1 - profDiscount) * (1 - humanPenalty) * availBonus);
+
+    // Cost modeling
+    const monthlyTokens = estimateMonthlyTokens(data);
+    const monthlyTokenCost = (monthlyTokens / 1000) * DEFAULT_COST_PER_1K_TOKENS;
+    const monthlyTotalCost = monthlyTokenCost + DEFAULT_MONTHLY_INFRA;
+    const annualTotalCost = monthlyTotalCost * 12;
+    const netAnnualValue = grossValue - annualTotalCost;
+    const roiMultiple = annualTotalCost > 0 ? netAnnualValue / annualTotalCost : 0;
+    const paybackMonths = grossValue > 0 ? annualTotalCost / (grossValue / 12) : 0;
+
+    return {
+        estimated_value: Math.round(grossValue),
+        salary_midpoint: Math.round(midpoint),
+        base_value: Math.round(baseValue),
+        skill_factor: skillFactor,
+        proficiency_discount: profDiscount,
+        human_penalty: humanPenalty,
+        availability_bonus: availBonus,
+        monthly_token_cost: Math.round(monthlyTokenCost),
+        monthly_infra_cost: DEFAULT_MONTHLY_INFRA,
+        monthly_total_cost: Math.round(monthlyTotalCost),
+        annual_total_cost: Math.round(annualTotalCost),
+        net_annual_value: Math.round(netAnnualValue),
+        roi_multiple: roiMultiple,
+        payback_months: paybackMonths,
+        estimated_monthly_tokens: monthlyTokens,
+    };
+}
+
+function formatCurrency(n) {
+    return '$' + n.toLocaleString('en-US');
+}
+
+function formatTokens(n) {
+    if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+    if (n >= 1000) return (n / 1000).toFixed(0) + 'K';
+    return n.toString();
+}
+
+function renderAgentValue(valueEstimate) {
+    if (!valueEstimate) return '';
+    const v = valueEstimate;
+    const ratio = v.salary_midpoint > 0 ? (v.estimated_value / v.salary_midpoint * 100).toFixed(0) : 0;
+
+    // Determine color based on value-to-salary ratio
+    const cls = ratio >= 50 ? 'value-high' : ratio >= 25 ? 'value-mid' : 'value-low';
+    const roiCls = v.roi_multiple >= 5 ? 'value-high' : v.roi_multiple >= 2 ? 'value-mid' : 'value-low';
+
+    return `<div class="panel panel-value ${cls}">
+        <div class="panel-title">Agent Value &amp; Cost Analysis</div>
+        <div class="value-headline">
+            <span class="value-amount">${formatCurrency(v.estimated_value)}</span>
+            <span class="value-period">/year gross</span>
+        </div>
+        <small>Based on ${formatCurrency(v.salary_midpoint)} salary midpoint</small>
+        <div class="value-factors">
+            <div class="value-factor">
+                <span class="value-factor-label">Base value</span>
+                <span class="value-factor-value">${formatCurrency(v.base_value)}</span>
+                <small>salary &times; ${Math.round((v.base_value / v.salary_midpoint) * 100)}% automation</small>
+            </div>
+            <div class="value-factor">
+                <span class="value-factor-label">Skill factor</span>
+                <span class="value-factor-value">&times;${v.skill_factor.toFixed(2)}</span>
+                <small>category automation weight</small>
+            </div>
+            <div class="value-factor">
+                <span class="value-factor-label">Proficiency discount</span>
+                <span class="value-factor-value">&minus;${(v.proficiency_discount * 100).toFixed(1)}%</span>
+                <small>expert requirements harder to replicate</small>
+            </div>
+            <div class="value-factor">
+                <span class="value-factor-label">Human penalty</span>
+                <span class="value-factor-value">&minus;${(v.human_penalty * 100).toFixed(1)}%</span>
+                <small>responsibilities requiring judgment</small>
+            </div>
+            <div class="value-factor">
+                <span class="value-factor-label">Availability bonus</span>
+                <span class="value-factor-value">&times;${v.availability_bonus.toFixed(2)}</span>
+                <small>24/7 operation multiplier</small>
+            </div>
+        </div>
+        <div class="value-cost-section">
+            <div class="panel-title">Operating Costs</div>
+            <div class="value-factors">
+                <div class="value-factor">
+                    <span class="value-factor-label">Token usage</span>
+                    <span class="value-factor-value">${formatTokens(v.estimated_monthly_tokens)}/mo</span>
+                    <small>based on skill mix &amp; proficiency</small>
+                </div>
+                <div class="value-factor">
+                    <span class="value-factor-label">Token cost</span>
+                    <span class="value-factor-value">${formatCurrency(v.monthly_token_cost)}/mo</span>
+                    <small>at $${DEFAULT_COST_PER_1K_TOKENS}/1K tokens</small>
+                </div>
+                <div class="value-factor">
+                    <span class="value-factor-label">Infrastructure</span>
+                    <span class="value-factor-value">${formatCurrency(v.monthly_infra_cost)}/mo</span>
+                    <small>monitoring, orchestration, maintenance</small>
+                </div>
+                <div class="value-factor">
+                    <span class="value-factor-label">Annual operating cost</span>
+                    <span class="value-factor-value">${formatCurrency(v.annual_total_cost)}/yr</span>
+                    <small>${formatCurrency(v.monthly_total_cost)}/mo total</small>
+                </div>
+            </div>
+        </div>
+        <div class="value-net-section ${roiCls}">
+            <div class="value-headline">
+                <span class="value-amount">${formatCurrency(v.net_annual_value)}</span>
+                <span class="value-period">/year net value</span>
+            </div>
+            <div class="value-factors">
+                <div class="value-factor">
+                    <span class="value-factor-label">ROI</span>
+                    <span class="value-factor-value">${v.roi_multiple.toFixed(1)}x</span>
+                    <small>net value / operating cost</small>
+                </div>
+                <div class="value-factor">
+                    <span class="value-factor-label">Payback period</span>
+                    <span class="value-factor-value">${v.payback_months.toFixed(1)} months</span>
+                    <small>time to recoup annual costs</small>
+                </div>
+            </div>
+        </div>
     </div>`;
 }
 
@@ -100,11 +490,14 @@ function renderSkillScores(scores) {
     <tbody>${rows}</tbody></table>`;
 }
 
-function renderExtractionResult(data) {
+function renderExtractionResult(data, salaryMin, salaryMax) {
+    const valueEstimate = computeAgentValue(data, salaryMin, salaryMax);
     return renderRolePanel(data.role)
         + renderSkillsTable(data.skills)
+        + renderHumanElements(data.skills, data.responsibilities)
         + renderSuggestedTraits(data.suggested_traits)
-        + renderAutomation(data.automation_potential, data.automation_rationale);
+        + renderAutomation(data.automation_potential, data.automation_rationale)
+        + renderAgentValue(valueEstimate);
 }
 
 function renderCultureProfile(profile) {
@@ -195,8 +588,14 @@ document.getElementById('extract-form').addEventListener('submit', async (e) => 
     btn.disabled = true;
     results.hidden = true;
     _lastExtractResult = null;
+    hideEmptyState('extract');
 
     const formData = new FormData(e.target);
+    const userSalaryMin = parseFloat(formData.get('salary_min')) || null;
+    const userSalaryMax = parseFloat(formData.get('salary_max')) || null;
+    // Remove salary fields from FormData (not needed by backend extract endpoint)
+    formData.delete('salary_min');
+    formData.delete('salary_max');
     try {
         const resp = await fetch('/api/extract', { method: 'POST', body: formData });
         const data = await resp.json();
@@ -204,7 +603,7 @@ document.getElementById('extract-form').addEventListener('submit', async (e) => 
             results.innerHTML = `<div class="panel panel-red"><div class="panel-title">Error</div>${esc(data.detail || 'Unknown error')}</div>`;
         } else {
             _lastExtractResult = data;
-            results.innerHTML = renderDownloadBar('Extract') + renderExtractionResult(data);
+            results.innerHTML = renderDownloadBar('Extract') + renderExtractionResult(data, userSalaryMin, userSalaryMax);
         }
         results.hidden = false;
     } catch (err) {
@@ -271,8 +670,13 @@ document.getElementById('forge-form').addEventListener('submit', async (e) => {
     btn.setAttribute('aria-busy', 'true');
     btn.disabled = true;
     results.hidden = true;
+    hideEmptyState('forge');
 
     const formData = new FormData(e.target);
+    const forgeSalaryMin = parseFloat(formData.get('salary_min')) || null;
+    const forgeSalaryMax = parseFloat(formData.get('salary_max')) || null;
+    formData.delete('salary_min');
+    formData.delete('salary_max');
     const mode = formData.get('mode');
     initForgeStages(mode);
     progress.hidden = false;
@@ -294,7 +698,7 @@ document.getElementById('forge-form').addEventListener('submit', async (e) => {
                 _lastForgeResult = data;
                 const bp = data.blueprint;
                 let html = renderDownloadBar('Forge');
-                html += renderExtractionResult(bp.extraction);
+                html += renderExtractionResult(bp.extraction, forgeSalaryMin, forgeSalaryMax);
                 if (data.traits) html += renderTraitBars(data.traits);
                 html += renderGapAnalysis(data.coverage_score, data.coverage_gaps);
                 if (data.skill_scores) html += renderSkillScores(data.skill_scores);
@@ -353,6 +757,7 @@ document.getElementById('batch-form').addEventListener('submit', async (e) => {
     results.hidden = true;
     progress.hidden = false;
     bar.value = 0;
+    hideEmptyState('batch');
 
     const formData = new FormData(e.target);
     try {
@@ -505,10 +910,10 @@ document.getElementById('settings-form').addEventListener('submit', async (e) =>
         });
         const data = await resp.json();
         document.getElementById('settings-status').innerHTML = data.saved
-            ? '<p style="color:#22c55e">Settings saved successfully.</p>'
-            : '<p style="color:#ef4444">Failed to save settings.</p>';
+            ? '<p style="color:var(--af-success-text)">Settings saved successfully.</p>'
+            : '<p style="color:var(--af-error-text)">Failed to save settings.</p>';
     } catch (err) {
-        document.getElementById('settings-status').innerHTML = `<p style="color:#ef4444">${esc(err.message)}</p>`;
+        document.getElementById('settings-status').innerHTML = `<p style="color:var(--af-error-text)">${esc(err.message)}</p>`;
     }
 });
 
@@ -524,15 +929,17 @@ document.getElementById('validate-key-btn').addEventListener('click', async () =
         });
         const data = await resp.json();
         status.innerHTML = data.valid
-            ? '<small style="color:#22c55e">Valid</small>'
-            : `<small style="color:#ef4444">Invalid: ${esc(data.error)}</small>`;
+            ? '<small style="color:var(--af-success-text)">Valid</small>'
+            : `<small style="color:var(--af-error-text)">Invalid: ${esc(data.error)}</small>`;
     } catch (err) {
-        status.innerHTML = `<small style="color:#ef4444">${esc(err.message)}</small>`;
+        status.innerHTML = `<small style="color:var(--af-error-text)">${esc(err.message)}</small>`;
     }
 });
 
 // ========== INIT ==========
 document.addEventListener('DOMContentLoaded', () => {
+    initTheme();
+    document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
     const hash = location.hash.slice(1) || 'extract';
     showTab(hash);
     loadCultureTemplates();

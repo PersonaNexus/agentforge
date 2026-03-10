@@ -129,3 +129,9 @@ class ExtractionResult(BaseModel):
     suggested_traits: SuggestedTraits = Field(default_factory=SuggestedTraits)
     automation_potential: float = Field(0.0, ge=0.0, le=1.0)
     automation_rationale: str = ""
+    salary_min: float | None = Field(
+        None, ge=0, description="Minimum annual salary if stated in the JD"
+    )
+    salary_max: float | None = Field(
+        None, ge=0, description="Maximum annual salary if stated in the JD"
+    )

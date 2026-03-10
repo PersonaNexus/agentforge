@@ -19,6 +19,7 @@
                 <li><a href="#batch" class="nav-link" data-tab="batch">Batch</a></li>
                 <li><a href="#culture" class="nav-link" data-tab="culture">Culture</a></li>
                 <li><a href="#settings" class="nav-link" data-tab="settings">Settings</a></li>
+                <li><button id="theme-toggle" class="outline secondary theme-toggle-btn" title="Toggle dark mode">&#9789;</button></li>
             </ul>
         </nav>
     </header>
@@ -44,9 +45,26 @@
                         </optgroup>
                     </select>
                 </label>
+                <details>
+                    <summary>Salary Range (optional)</summary>
+                    <div class="grid">
+                        <label>Min Annual Salary ($)
+                            <input type="number" name="salary_min" placeholder="e.g. 80000" min="0" step="1000">
+                        </label>
+                        <label>Max Annual Salary ($)
+                            <input type="number" name="salary_max" placeholder="e.g. 120000" min="0" step="1000">
+                        </label>
+                    </div>
+                    <small>Provide a salary range to see an estimated agent value. If the JD includes salary, it will be extracted automatically.</small>
+                </details>
                 <button type="submit" id="extract-btn">Extract Skills</button>
             </form>
             <div id="extract-results" class="results-area" hidden></div>
+            <div id="extract-empty" class="empty-state">
+                <div class="empty-state-icon">&#128270;</div>
+                <div class="empty-state-title">No extraction yet</div>
+                <div class="empty-state-text">Upload a job description file above to extract skills, role information, and personality traits.</div>
+            </div>
         </section>
 
         <!-- ===== FORGE TAB ===== -->
@@ -89,6 +107,18 @@
                         Skip SKILL.md generation
                     </label>
                 </fieldset>
+                <details>
+                    <summary>Salary Range (optional)</summary>
+                    <div class="grid">
+                        <label>Min Annual Salary ($)
+                            <input type="number" name="salary_min" placeholder="e.g. 80000" min="0" step="1000">
+                        </label>
+                        <label>Max Annual Salary ($)
+                            <input type="number" name="salary_max" placeholder="e.g. 120000" min="0" step="1000">
+                        </label>
+                    </div>
+                    <small>Provide a salary range to see an estimated agent value. If the JD includes salary, it will be extracted automatically.</small>
+                </details>
                 <button type="submit" id="forge-btn">Forge Agent</button>
             </form>
             <div id="forge-progress" class="progress-area" hidden>
@@ -96,6 +126,11 @@
                 <div id="forge-stages"></div>
             </div>
             <div id="forge-results" class="results-area" hidden></div>
+            <div id="forge-empty" class="empty-state">
+                <div class="empty-state-icon">&#9881;</div>
+                <div class="empty-state-title">Ready to forge</div>
+                <div class="empty-state-text">Upload a job description and select a pipeline mode to generate a complete AI agent blueprint.</div>
+            </div>
         </section>
 
         <!-- ===== BATCH TAB ===== -->
@@ -134,6 +169,11 @@
                 <p id="batch-status"></p>
             </div>
             <div id="batch-results" class="results-area" hidden></div>
+            <div id="batch-empty" class="empty-state">
+                <div class="empty-state-icon">&#128218;</div>
+                <div class="empty-state-title">No batch jobs</div>
+                <div class="empty-state-text">Select multiple job description files to process them all at once in parallel.</div>
+            </div>
         </section>
 
         <!-- ===== CULTURE TAB ===== -->
