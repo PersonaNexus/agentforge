@@ -20,6 +20,12 @@ PIP="${VENV_DIR}/bin/pip"
 echo "export PATH=\"${VENV_DIR}/bin:\$PATH\"" >> "$CLAUDE_ENV_FILE"
 echo "export VIRTUAL_ENV=\"${VENV_DIR}\"" >> "$CLAUDE_ENV_FILE"
 
+# Skip installs if already done (delete .deps-installed to force reinstall)
+MARKER="${VENV_DIR}/.deps-installed"
+if [ -f "$MARKER" ]; then
+  exit 0
+fi
+
 # Install personanexus from PyPI first (pyproject.toml has a broken local path)
 $PIP install personanexus
 
@@ -50,3 +56,6 @@ $PIP install \
   "pytest-cov>=4.0" \
   "ruff>=0.4" \
   "mypy>=1.8"
+
+# Mark deps as installed
+touch "$MARKER"
