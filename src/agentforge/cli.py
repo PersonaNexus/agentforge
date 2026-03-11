@@ -309,13 +309,12 @@ def forge(
         skill_path.write_text(context["skill_file"])
         console.print(f"[green]Skill file saved:[/green] {skill_path}")
 
-    # Save skill folder
+    # Save skill folder (Claude Code format: <skill-name>/SKILL.md)
     if skill_folder and "skill_folder" in context:
         sf = context["skill_folder"]
-        folder_path = safe_output_path(output_dir, sf.agent_id)
+        folder_path = safe_output_path(output_dir, sf.skill_name)
         folder_path.mkdir(exist_ok=True)
-        (folder_path / "instructions.md").write_text(sf.instructions_md)
-        (folder_path / "manifest.json").write_text(sf.manifest_json)
+        (folder_path / "SKILL.md").write_text(sf.skill_md)
         console.print(f"[green]Skill folder saved:[/green] {folder_path}/")
 
     # Build blueprint

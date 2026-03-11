@@ -81,8 +81,8 @@ def _run_batch(
                 if bp.skill_file:
                     output_files[f"{agent_id}_SKILL.md"] = bp.skill_file
                 if bp.skill_folder:
-                    output_files[f"{agent_id}/instructions.md"] = bp.skill_folder.instructions_md
-                    output_files[f"{agent_id}/manifest.json"] = bp.skill_folder.manifest_json
+                    skill_name = bp.skill_folder.skill_name
+                    output_files[f"{skill_name}/SKILL.md"] = bp.skill_folder.skill_md
 
             results_data.append(entry)
 

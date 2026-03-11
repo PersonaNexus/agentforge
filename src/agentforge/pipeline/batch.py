@@ -79,10 +79,9 @@ class BatchProcessor:
 
             if "skill_folder" in context:
                 sf = context["skill_folder"]
-                sf_dir = safe_output_path(self.output_dir, sf.agent_id)
+                sf_dir = safe_output_path(self.output_dir, sf.skill_name)
                 sf_dir.mkdir(exist_ok=True)
-                (sf_dir / "instructions.md").write_text(sf.instructions_md)
-                (sf_dir / "manifest.json").write_text(sf.manifest_json)
+                (sf_dir / "SKILL.md").write_text(sf.skill_md)
 
             duration = time.time() - start
             return BatchResult(

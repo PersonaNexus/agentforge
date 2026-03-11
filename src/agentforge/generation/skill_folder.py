@@ -1,9 +1,13 @@
-"""Generate Claude-compatible skill folders from extraction results.
+"""Generate Claude Code-compatible skill folders from extraction results.
 
-Produces a skill folder containing:
-- instructions.md: Structured skill instructions with trigger patterns,
-  personality modifiers, workflows, and MCP tool integration stubs.
-- manifest.json: Skill metadata, triggers, dependencies, and provenance.
+Produces a skill folder containing a single SKILL.md file with YAML
+frontmatter (name, description, allowed-tools) followed by markdown
+instructions — the exact format Claude Code expects for drag-and-drop
+skill installation.
+
+Claude Code skill spec:
+    <skill-name>/
+    └── SKILL.md   ← YAML frontmatter + markdown body
 """
 
 from __future__ import annotations
@@ -20,7 +24,6 @@ from agentforge.models.extracted_skills import (
 )
 from agentforge.models.job_description import JobDescription
 from agentforge.generation.skill_file import (
-    _TRAIT_DESCRIPTORS,
     _trait_description,
     _trait_prompt,
 )
@@ -28,18 +31,17 @@ from agentforge.utils import safe_filename
 
 
 class SkillFolderResult(BaseModel):
-    """Container for Claude-compatible skill folder content."""
+    """Container for Claude Code-compatible skill folder content."""
 
-    agent_id: str = Field(..., description="Sanitized agent ID for folder naming")
-    instructions_md: str = Field(..., description="instructions.md content")
-    manifest_json: str = Field(..., description="manifest.json content")
+    skill_name: str = Field(..., description="Slug name for the skill folder")
+    skill_md: str = Field(..., description="SKILL.md content with YAML frontmatter")
 
 
 class SkillFolderGenerator:
-    """Generates Claude-compatible skill folders from extraction results.
+    """Generates Claude Code-compatible skill folders from extraction results.
 
-    Follows the Anthropic skill folder pattern: instructions.md for Claude
-    consumption plus manifest.json for metadata and tooling.
+    Produces a single SKILL.md with YAML frontmatter metadata and markdown
+    instructions, matching the Claude Code skill specification.
     """
 
     def generate(
@@ -56,78 +58,111 @@ class SkillFolderGenerator:
             jd: Optional parsed job description for additional context.
 
         Returns:
-            SkillFolderResult with instructions.md and manifest.json content.
+            SkillFolderResult with skill_name and SKILL.md content.
         """
-        agent_id = identity.metadata.id
+        skill_name = self._make_skill_name(extraction)
 
         return SkillFolderResult(
-            agent_id=safe_filename(agent_id),
-            instructions_md=self._render_instructions(extraction, identity, jd),
-            manifest_json=self._render_manifest(extraction, identity, jd),
+            skill_name=skill_name,
+            skill_md=self._render_skill_md(extraction, identity, jd, skill_name),
         )
 
     # ------------------------------------------------------------------
-    # instructions.md rendering
+    # Skill name derivation
     # ------------------------------------------------------------------
 
-    def _render_instructions(
+    def _make_skill_name(self, extraction: ExtractionResult) -> str:
+        """Derive a Claude Code skill slug from the role title.
+
+        Produces lowercase-hyphenated names like 'senior-data-engineer'.
+        """
+        raw = safe_filename(extraction.role.title).lower().replace("_", "-")
+        # Collapse multiple hyphens
+        import re
+        raw = re.sub(r"-+", "-", raw).strip("-")
+        return raw or "generated-skill"
+
+    # ------------------------------------------------------------------
+    # SKILL.md rendering (frontmatter + body)
+    # ------------------------------------------------------------------
+
+    def _render_skill_md(
         self,
         extraction: ExtractionResult,
         identity: Any,
         jd: JobDescription | None,
+        skill_name: str,
     ) -> str:
-        """Build the full instructions.md content."""
+        """Build the complete SKILL.md with YAML frontmatter + markdown body."""
         lines: list[str] = []
 
-        self._render_inst_header(lines, extraction)
-        self._render_inst_triggers(lines, extraction)
-        self._render_inst_personality(lines, extraction)
-        self._render_inst_competencies(lines, extraction)
-        self._render_inst_workflows(lines, extraction)
-        self._render_inst_mcp(lines, extraction)
-        self._render_inst_scope(lines, extraction)
-        self._render_inst_audience(lines, extraction)
-        self._render_inst_footer(lines, extraction, jd)
+        # YAML frontmatter
+        self._render_frontmatter(lines, extraction, skill_name)
+
+        # Markdown body (instructions for Claude)
+        self._render_body(lines, extraction, identity, jd)
 
         return "\n".join(lines)
 
-    def _render_inst_header(
+    def _render_frontmatter(
+        self,
+        lines: list[str],
+        extraction: ExtractionResult,
+        skill_name: str,
+    ) -> None:
+        """Render YAML frontmatter block."""
+        # Build description from purpose, truncated for frontmatter
+        description = extraction.role.purpose
+        if len(description) > 200:
+            description = description[:197] + "..."
+
+        lines.append("---")
+        lines.append(f"name: {skill_name}")
+        lines.append(f"description: {description}")
+
+        # Build trigger hint from primary scope
+        if extraction.role.scope_primary:
+            hint = extraction.role.scope_primary[0]
+            if len(hint) > 60:
+                hint = hint[:57] + "..."
+            lines.append(f"argument-hint: \"[{hint}]\"")
+
+        # Default allowed tools for Claude Code
+        lines.append("allowed-tools: Read, Grep, Glob, Bash, Write, Edit")
+
+        lines.append("---")
+        lines.append("")
+
+    def _render_body(
+        self,
+        lines: list[str],
+        extraction: ExtractionResult,
+        identity: Any,
+        jd: JobDescription | None,
+    ) -> None:
+        """Render the markdown body (instructions for Claude)."""
+        self._render_header(lines, extraction)
+        self._render_identity(lines, extraction)
+        self._render_triggers(lines, extraction)
+        self._render_competencies(lines, extraction)
+        self._render_workflows(lines, extraction)
+        self._render_scope(lines, extraction)
+        self._render_audience(lines, extraction)
+        self._render_footer(lines, extraction, jd)
+
+    def _render_header(
         self, lines: list[str], extraction: ExtractionResult
     ) -> None:
         """Render title and purpose."""
-        lines.append(f"# {extraction.role.title} Agent Skill")
+        lines.append(f"# {extraction.role.title}")
         lines.append("")
         lines.append(f"> {extraction.role.purpose}")
         lines.append("")
 
-    def _render_inst_triggers(
+    def _render_identity(
         self, lines: list[str], extraction: ExtractionResult
     ) -> None:
-        """Render trigger patterns from scope and responsibilities."""
-        triggers: list[str] = list(extraction.role.scope_primary)
-
-        # Add first few responsibilities as secondary triggers
-        for resp in extraction.responsibilities[:3]:
-            # Use the first phrase of each responsibility
-            trigger = resp.split(",")[0].strip()
-            if trigger and trigger not in triggers:
-                triggers.append(trigger)
-
-        if not triggers:
-            return
-
-        lines.append("## Trigger Patterns")
-        lines.append("")
-        lines.append("Activate this skill when the user's request involves:")
-        lines.append("")
-        for trigger in triggers:
-            lines.append(f"- {trigger}")
-        lines.append("")
-
-    def _render_inst_personality(
-        self, lines: list[str], extraction: ExtractionResult
-    ) -> None:
-        """Render identity statement and personality modifiers."""
+        """Render identity statement, personality, and communication style."""
         lines.append("## Identity & Personality")
         lines.append("")
         lines.append(
@@ -138,9 +173,6 @@ class SkillFolderGenerator:
 
         defined = extraction.suggested_traits.defined_traits()
         if defined:
-            lines.append("### Personality Modifiers")
-            lines.append("")
-
             sorted_traits = sorted(defined.items(), key=lambda x: x[1], reverse=True)
 
             for trait_name, value in sorted_traits:
@@ -153,7 +185,7 @@ class SkillFolderGenerator:
                 lines.append(line)
             lines.append("")
 
-            # Communication style summary
+            # Communication style
             lines.append("### Communication Style")
             lines.append("")
             style_notes = self._derive_communication_style(defined)
@@ -162,7 +194,7 @@ class SkillFolderGenerator:
             lines.append("")
 
     def _derive_communication_style(self, traits: dict[str, float]) -> list[str]:
-        """Derive communication style notes from trait combination."""
+        """Derive communication style notes from trait combinations."""
         notes: list[str] = []
 
         rigor = traits.get("rigor", 0.5)
@@ -196,7 +228,29 @@ class SkillFolderGenerator:
 
         return notes
 
-    def _render_inst_competencies(
+    def _render_triggers(
+        self, lines: list[str], extraction: ExtractionResult
+    ) -> None:
+        """Render trigger patterns from scope and responsibilities."""
+        triggers: list[str] = list(extraction.role.scope_primary)
+
+        for resp in extraction.responsibilities[:3]:
+            trigger = resp.split(",")[0].strip()
+            if trigger and trigger not in triggers:
+                triggers.append(trigger)
+
+        if not triggers:
+            return
+
+        lines.append("## When to Use This Skill")
+        lines.append("")
+        lines.append("Activate this skill when the user's request involves:")
+        lines.append("")
+        for trigger in triggers:
+            lines.append(f"- {trigger}")
+        lines.append("")
+
+    def _render_competencies(
         self, lines: list[str], extraction: ExtractionResult
     ) -> None:
         """Render core competencies: domain, technical, tools."""
@@ -252,14 +306,13 @@ class SkillFolderGenerator:
                     lines.append(f"  - GenAI integration: {skill.genai_application}")
             lines.append("")
 
-    def _render_inst_workflows(
+    def _render_workflows(
         self, lines: list[str], extraction: ExtractionResult
     ) -> None:
         """Render workflows derived from responsibilities."""
         if not extraction.responsibilities:
             return
 
-        # Collect tool/hard skill names for workflow steps
         tool_names = [
             s.name
             for s in extraction.skills
@@ -289,31 +342,7 @@ class SkillFolderGenerator:
                 lines.append("5. Document findings and provide clear summary")
             lines.append("")
 
-    def _render_inst_mcp(
-        self, lines: list[str], extraction: ExtractionResult
-    ) -> None:
-        """Render MCP tool integration stubs."""
-        mcp_candidates = [
-            s
-            for s in extraction.skills
-            if s.category == SkillCategory.TOOL
-            or (s.category == SkillCategory.HARD and s.genai_application)
-            or (s.category == SkillCategory.DOMAIN and s.genai_application)
-        ]
-
-        if not mcp_candidates:
-            return
-
-        lines.append("## MCP Tool Integration")
-        lines.append("")
-        lines.append("This agent may use the following tool patterns:")
-        lines.append("")
-        for skill in mcp_candidates:
-            detail = skill.genai_application or skill.context or skill.name
-            lines.append(f"- **{skill.name}**: {detail}")
-        lines.append("")
-
-    def _render_inst_scope(
+    def _render_scope(
         self, lines: list[str], extraction: ExtractionResult
     ) -> None:
         """Render scope and boundaries."""
@@ -352,7 +381,7 @@ class SkillFolderGenerator:
             )
         lines.append("")
 
-    def _render_inst_audience(
+    def _render_audience(
         self, lines: list[str], extraction: ExtractionResult
     ) -> None:
         """Render audience section."""
@@ -367,7 +396,7 @@ class SkillFolderGenerator:
             lines.append(f"- {audience}")
         lines.append("")
 
-    def _render_inst_footer(
+    def _render_footer(
         self,
         lines: list[str],
         extraction: ExtractionResult,
@@ -387,66 +416,3 @@ class SkillFolderGenerator:
             f"{datetime.now(timezone.utc).strftime('%Y-%m-%d')}*"
         )
         lines.append("")
-
-    # ------------------------------------------------------------------
-    # manifest.json rendering
-    # ------------------------------------------------------------------
-
-    def _render_manifest(
-        self,
-        extraction: ExtractionResult,
-        identity: Any,
-        jd: JobDescription | None,
-    ) -> str:
-        """Build the manifest.json content."""
-        from agentforge import __version__
-
-        # Skill name as slug
-        name = safe_filename(extraction.role.title).lower().replace("_", "-")
-
-        # Skills grouped by category (just names)
-        skills_summary: dict[str, list[str]] = {}
-        for skill in extraction.skills:
-            cat_key = skill.category.value
-            skills_summary.setdefault(cat_key, []).append(skill.name)
-
-        # Tool dependencies
-        tools = [
-            s.name for s in extraction.skills if s.category == SkillCategory.TOOL
-        ]
-
-        # Personality traits
-        defined_traits = extraction.suggested_traits.defined_traits()
-        personality = {k: round(v, 2) for k, v in defined_traits.items()}
-
-        # Source info
-        source_title = "Unknown"
-        if jd:
-            source_title = jd.title
-            if jd.company:
-                source_title += f" at {jd.company}"
-
-        manifest: dict[str, Any] = {
-            "name": name,
-            "version": "1.0.0",
-            "description": extraction.role.purpose,
-            "agent_id": identity.metadata.id,
-            "domain": extraction.role.domain,
-            "seniority": extraction.role.seniority.value,
-            "triggers": list(extraction.role.scope_primary),
-            "dependencies": {
-                "tools": tools,
-                "mcp_servers": [],
-            },
-            "personality": personality,
-            "automation_potential": extraction.automation_potential,
-            "skills_summary": skills_summary,
-            "audience": list(extraction.role.audience),
-            "source": {
-                "title": source_title,
-                "generated": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-                "generator": f"AgentForge v{__version__}",
-            },
-        }
-
-        return json.dumps(manifest, indent=2)

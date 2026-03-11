@@ -129,6 +129,9 @@ class SkillFileGenerator:
         """
         lines: list[str] = []
 
+        # ── YAML Frontmatter (Claude Code compatible) ──
+        self._render_frontmatter(lines, extraction)
+
         # ── Header ──
         self._render_header(lines, extraction, jd)
 
@@ -164,6 +167,29 @@ class SkillFileGenerator:
     # ------------------------------------------------------------------
     # Section renderers
     # ------------------------------------------------------------------
+
+    def _render_frontmatter(
+        self,
+        lines: list[str],
+        extraction: ExtractionResult,
+    ) -> None:
+        """Render YAML frontmatter for Claude Code compatibility."""
+        from agentforge.utils import safe_filename
+        import re
+
+        skill_name = safe_filename(extraction.role.title).lower().replace("_", "-")
+        skill_name = re.sub(r"-+", "-", skill_name).strip("-") or "generated-skill"
+
+        description = extraction.role.purpose
+        if len(description) > 200:
+            description = description[:197] + "..."
+
+        lines.append("---")
+        lines.append(f"name: {skill_name}")
+        lines.append(f"description: {description}")
+        lines.append("allowed-tools: Read, Grep, Glob, Bash, Write, Edit")
+        lines.append("---")
+        lines.append("")
 
     def _render_header(
         self,

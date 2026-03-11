@@ -97,9 +97,8 @@ def _run_forge(
         if not no_skill_file and "skill_folder" in context:
             sf = context["skill_folder"]
             result["skill_folder"] = {
-                "instructions_md": sf.instructions_md,
-                "manifest_json": sf.manifest_json,
-                "agent_id": sf.agent_id,
+                "skill_md": sf.skill_md,
+                "skill_name": sf.skill_name,
             }
 
         job.emit_done(result)
@@ -209,16 +208,15 @@ async def forge_download(job_id: str, file_type: str, request: Request):
             raise HTTPException(status_code=404, detail="No skill folder available")
 
         buffer = io.BytesIO()
-        agent_id = sf_data["agent_id"]
+        skill_name = sf_data["skill_name"]
         with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr(f"{agent_id}/instructions.md", sf_data["instructions_md"])
-            zf.writestr(f"{agent_id}/manifest.json", sf_data["manifest_json"])
+            zf.writestr(f"{skill_name}/SKILL.md", sf_data["skill_md"])
         buffer.seek(0)
 
         return StreamingResponse(
             buffer,
             media_type="application/zip",
-            headers={"Content-Disposition": f'attachment; filename="{agent_id}_skill.zip"'},
+            headers={"Content-Disposition": f'attachment; filename="{skill_name}_skill.zip"'},
         )
     else:
         raise HTTPException(status_code=400, detail="Invalid file type")
