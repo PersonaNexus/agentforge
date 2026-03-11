@@ -22,4 +22,6 @@ htmlcov/
 .DS_Store
 
 # Claude Code
-.claude/
+.claude/*
+!.claude/hooks/
+!.claude/settings.json
