@@ -187,32 +187,6 @@ async def forge_stream(job_id: str, request: Request) -> StreamingResponse:
     return StreamingResponse(_generate(), media_type="text/event-stream")
 
 
-@router.get("/forge/{job_id}/download/skill-folder")
-async def forge_download_skill_folder(job_id: str, request: Request):
-    """Download the skill folder as a ZIP file."""
-    store = _get_store(request)
-    job = store.get(job_id)
-    if not job or not job.result:
-        raise HTTPException(status_code=404, detail="Job not found or not complete")
-
-    sf_data = job.result.get("skill_folder")
-    if not sf_data:
-        raise HTTPException(status_code=404, detail="No skill folder available")
-
-    buffer = io.BytesIO()
-    agent_id = sf_data["agent_id"]
-    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr(f"{agent_id}/instructions.md", sf_data["instructions_md"])
-        zf.writestr(f"{agent_id}/manifest.json", sf_data["manifest_json"])
-    buffer.seek(0)
-
-    return StreamingResponse(
-        buffer,
-        media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{agent_id}_skill.zip"'},
-    )
-
-
 @router.get("/forge/{job_id}/download/{file_type}")
 async def forge_download(job_id: str, file_type: str, request: Request):
     """Download a generated file from a completed forge job."""
@@ -229,6 +203,23 @@ async def forge_download(job_id: str, file_type: str, request: Request):
         content = job.result.get("skill_file", "")
         filename = "SKILL.md"
         media_type = "text/markdown"
+    elif file_type == "skill-folder":
+        sf_data = job.result.get("skill_folder")
+        if not sf_data:
+            raise HTTPException(status_code=404, detail="No skill folder available")
+
+        buffer = io.BytesIO()
+        agent_id = sf_data["agent_id"]
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr(f"{agent_id}/instructions.md", sf_data["instructions_md"])
+            zf.writestr(f"{agent_id}/manifest.json", sf_data["manifest_json"])
+        buffer.seek(0)
+
+        return StreamingResponse(
+            buffer,
+            media_type="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{agent_id}_skill.zip"'},
+        )
     else:
         raise HTTPException(status_code=400, detail="Invalid file type")
 
