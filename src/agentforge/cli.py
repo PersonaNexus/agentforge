@@ -662,10 +662,6 @@ def serve(
         ))
         raise typer.Exit(code=1)
 
-    from agentforge.web.app import create_app
-
-    application = create_app()
-
     if open_browser:
         import threading
         import webbrowser
@@ -682,7 +678,20 @@ def serve(
         "Press Ctrl+C to stop.",
         border_style="green",
     ))
-    uvicorn.run(application, host=host, port=port, reload=reload)
+
+    if reload:
+        # uvicorn requires an import string for --reload mode
+        uvicorn.run(
+            "agentforge.web.app:create_app",
+            factory=True,
+            host=host,
+            port=port,
+            reload=True,
+        )
+    else:
+        from agentforge.web.app import create_app
+
+        uvicorn.run(create_app(), host=host, port=port)
 
 
 if __name__ == "__main__":
