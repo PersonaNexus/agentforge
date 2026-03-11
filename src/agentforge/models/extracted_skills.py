@@ -95,6 +95,14 @@ class ExtractedRole(BaseModel):
     seniority: SeniorityLevel = SeniorityLevel.MID
     domain: str = Field(default="general")
 
+    @field_validator("scope_primary", "scope_secondary", "audience", mode="before")
+    @classmethod
+    def coerce_none_to_list(cls, v: object) -> list:
+        """LLM may return None for optional list fields; coerce to empty list."""
+        if v is None:
+            return []
+        return v
+
 
 class SuggestedTraits(BaseModel):
     """LLM-suggested personality traits for the agent (0-1 scale)."""
@@ -129,6 +137,14 @@ class ExtractionResult(BaseModel):
     suggested_traits: SuggestedTraits = Field(default_factory=SuggestedTraits)
     automation_potential: float = Field(0.0, ge=0.0, le=1.0)
     automation_rationale: str = ""
+
+    @field_validator("skills", "responsibilities", "qualifications", mode="before")
+    @classmethod
+    def coerce_none_to_list(cls, v: object) -> list:
+        """LLM may return None for optional list fields; coerce to empty list."""
+        if v is None:
+            return []
+        return v
     salary_min: float | None = Field(
         None, ge=0, description="Minimum annual salary if stated in the JD"
     )
