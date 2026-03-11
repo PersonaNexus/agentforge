@@ -188,6 +188,7 @@ class TestAgentTeammate:
         teammate = AgentTeammate(
             name="Test",
             archetype="Test",
+            arch_key="technical_builder",
             description="Test",
             skills=[
                 _make_skill("Python", SkillCategory.HARD),
@@ -202,6 +203,7 @@ class TestAgentTeammate:
         teammate = AgentTeammate(
             name="Test Agent",
             archetype="Technical Builder",
+            arch_key="technical_builder",
             description="Handles tech",
             skills=[_make_skill("Python", SkillCategory.HARD)],
             personality={"rigor": 0.8, "creativity": 0.6},

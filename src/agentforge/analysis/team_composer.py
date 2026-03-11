@@ -23,6 +23,7 @@ class AgentTeammate:
 
     name: str
     archetype: str
+    arch_key: str
     description: str
     skills: list[ExtractedSkill]
     personality: dict[str, float]
@@ -231,6 +232,44 @@ _ARCHETYPES: dict[str, dict] = {
 }
 
 
+_DOMAIN_NAMES: dict[str, dict[str, str]] = {
+    "engineering": {
+        "research_analyst": "Tech Scout",
+        "technical_builder": "Code Architect",
+        "ops_automator": "DevOps Pilot",
+        "content_crafter": "Spec Drafter",
+        "data_navigator": "Data Wrangler",
+        "quality_guardian": "Code Reviewer",
+    },
+    "data": {
+        "research_analyst": "Insight Miner",
+        "data_navigator": "Data Whisperer",
+        "technical_builder": "Pipeline Builder",
+    },
+    "marketing": {
+        "content_crafter": "Campaign Crafter",
+        "research_analyst": "Market Scout",
+        "data_navigator": "Metrics Maven",
+    },
+    "sales": {
+        "stakeholder_liaison": "Deal Prep",
+        "content_crafter": "Pitch Crafter",
+        "research_analyst": "Market Scout",
+    },
+    "product": {
+        "research_analyst": "Market Scout",
+        "content_crafter": "Spec Drafter",
+        "data_navigator": "Metrics Maven",
+        "stakeholder_liaison": "Stakeholder Prep",
+    },
+    "finance": {
+        "data_navigator": "Numbers Analyst",
+        "quality_guardian": "Compliance Checker",
+        "research_analyst": "Market Watcher",
+    },
+}
+
+
 class TeamComposer:
     """Compose a team of AI agent teammates from extraction results.
 
@@ -283,10 +322,11 @@ class TeamComposer:
             teammate = AgentTeammate(
                 name=self._generate_name(arch_key, extraction),
                 archetype=arch_def["label"],
+                arch_key=arch_key,
                 description=self._generate_description(unassigned, arch_def),
                 skills=unassigned,
                 personality=dict(arch_def["personality"]),
-                benefit=arch_def["benefit_template"].format(role=role_short),
+                benefit=arch_def["benefit_template"].replace("{role}", role_short),
             )
             teammates.append(teammate)
             assigned.update(s.name for s in unassigned)
@@ -340,55 +380,11 @@ class TeamComposer:
 
     def _generate_name(self, arch_key: str, extraction: ExtractionResult) -> str:
         """Generate a contextual name for the teammate."""
-        arch_def = _ARCHETYPES[arch_key]
-        domain = extraction.role.domain or "general"
-
-        # Use domain to create a more specific name
-        _DOMAIN_PREFIXES: dict[str, dict[str, str]] = {
-            "engineering": {
-                "research_analyst": "Tech Scout",
-                "technical_builder": "Code Architect",
-                "ops_automator": "DevOps Pilot",
-                "content_crafter": "Spec Drafter",
-                "data_navigator": "Data Wrangler",
-                "quality_guardian": "Code Reviewer",
-            },
-            "data": {
-                "research_analyst": "Insight Miner",
-                "data_navigator": "Data Whisperer",
-                "technical_builder": "Pipeline Builder",
-            },
-            "marketing": {
-                "content_crafter": "Campaign Crafter",
-                "research_analyst": "Market Scout",
-                "data_navigator": "Metrics Maven",
-            },
-            "sales": {
-                "stakeholder_liaison": "Deal Prep",
-                "content_crafter": "Pitch Crafter",
-                "research_analyst": "Market Scout",
-            },
-            "product": {
-                "research_analyst": "Market Scout",
-                "content_crafter": "Spec Drafter",
-                "data_navigator": "Metrics Maven",
-                "stakeholder_liaison": "Stakeholder Prep",
-            },
-            "finance": {
-                "data_navigator": "Numbers Analyst",
-                "quality_guardian": "Compliance Checker",
-                "research_analyst": "Market Watcher",
-            },
-        }
-
-        domain_lower = domain.lower()
-        for domain_key, names in _DOMAIN_PREFIXES.items():
-            if domain_key in domain_lower:
-                if arch_key in names:
-                    return names[arch_key]
-
-        # Fallback to generic archetype label
-        return arch_def["label"]
+        domain_lower = (extraction.role.domain or "").lower()
+        for domain_key, names in _DOMAIN_NAMES.items():
+            if domain_key in domain_lower and arch_key in names:
+                return names[arch_key]
+        return _ARCHETYPES[arch_key]["label"]
 
     def _generate_description(
         self, skills: list[ExtractedSkill], arch_def: dict
@@ -408,14 +404,13 @@ class TeamComposer:
         best_score = 0.0
 
         for teammate in teammates:
-            # Find the archetype key for this teammate
-            for arch_key, arch_def in _ARCHETYPES.items():
-                if arch_def["label"] == teammate.archetype:
-                    _, score = self._score_archetype([skill], arch_def)
-                    if score > best_score:
-                        best_score = score
-                        best = teammate
-                    break
+            arch_def = _ARCHETYPES.get(teammate.arch_key)
+            if not arch_def:
+                continue
+            _, score = self._score_archetype([skill], arch_def)
+            if score > best_score:
+                best_score = score
+                best = teammate
 
         return best
 

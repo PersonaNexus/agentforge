@@ -109,8 +109,8 @@ def _run_forge(
 
         job.emit_done(result)
 
-    except Exception as e:
-        job.emit_error(str(e))
+    except Exception:
+        job.emit_error("Pipeline failed. Check server logs for details.")
     finally:
         file_path.unlink(missing_ok=True)
         if culture_path:
@@ -215,14 +215,17 @@ async def forge_download(job_id: str, file_type: str, request: Request):
 
         buffer = io.BytesIO()
         skill_name = sf_data["skill_name"]
+        # Sanitize skill_name: strip path separators and header-injection chars
+        import re
+        safe_name = re.sub(r'[^\w\-.]', '_', skill_name)[:100] or "skill"
         with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr(f"{skill_name}/SKILL.md", sf_data["skill_md"])
+            zf.writestr(f"{safe_name}/SKILL.md", sf_data["skill_md"])
         buffer.seek(0)
 
         return StreamingResponse(
             buffer,
             media_type="application/zip",
-            headers={"Content-Disposition": f'attachment; filename="{skill_name}_skill.zip"'},
+            headers={"Content-Disposition": f'attachment; filename="{safe_name}_skill.zip"'},
         )
     else:
         raise HTTPException(status_code=400, detail="Invalid file type")

@@ -576,6 +576,7 @@ function composeAgentTeam(data) {
         if (!unassigned.length) continue;
         const arch = TEAM_ARCHETYPES[entry.key];
         teammates.push({
+            _key: entry.key,
             name: arch.label,
             archetype: arch.label,
             icon: arch.icon,
@@ -586,10 +587,22 @@ function composeAgentTeam(data) {
         unassigned.forEach(s => assigned.add(s.name));
     }
 
-    // Sweep remaining
+    // Sweep remaining into closest-matching teammate
     const remaining = skills.filter(s => !assigned.has(s.name));
     if (remaining.length && teammates.length) {
-        remaining.forEach(s => teammates[0].skills.push(s.name));
+        remaining.forEach(s => {
+            let best = 0, bestScore = 0;
+            teammates.forEach((tm, i) => {
+                const arch = TEAM_ARCHETYPES[tm._key];
+                if (!arch) return;
+                let sc = 0;
+                if (arch.categories.includes(s.category)) sc += 2;
+                const txt = `${s.name} ${s.context || ''} ${s.genai_application || ''}`.toLowerCase();
+                arch.keywords.forEach(kw => { if (txt.includes(kw)) sc += 0.5; });
+                if (sc > bestScore) { bestScore = sc; best = i; }
+            });
+            teammates[best].skills.push(s.name);
+        });
     }
 
     if (!teammates.length) return null;
@@ -618,7 +631,7 @@ function renderAgentTeam(team) {
 
         return `<div class="team-card">
             <div class="team-card-header">
-                <span class="team-card-icon">${t.icon || '\uD83E\uDD16'}</span>
+                <span class="team-card-icon">${esc(t.icon || '\uD83E\uDD16')}</span>
                 <div>
                     <div class="team-card-name">${esc(t.name)}</div>
                     <div class="team-card-archetype">${esc(t.archetype)}</div>
