@@ -40,6 +40,8 @@ def _run_forge(
     mode: str,
     model: str,
     culture_path: Path | None,
+    original_filename: str = "",
+    trait_overrides: dict[str, float] | None = None,
 ) -> None:
     """Worker thread: runs the forge pipeline and emits SSE events."""
     try:
@@ -76,15 +78,22 @@ def _run_forge(
         }
         if culture_path:
             context["culture_path"] = str(culture_path)
+        if trait_overrides:
+            context["trait_overrides"] = trait_overrides
 
         context = pipeline.run(context)
         blueprint = pipeline.to_blueprint(context)
+
+        # Derive download name from original uploaded filename
+        stem = Path(original_filename).stem if original_filename else ""
+        download_stem = re.sub(r'[^\w\-.]', '_', stem)[:100] if stem else ""
 
         # Build result
         sf = context.get("skill_folder")
         result: dict[str, Any] = {
             "blueprint": json.loads(blueprint.model_dump_json()),
             "identity_yaml": context.get("identity_yaml", ""),
+            "source_filename": download_stem,
             "traits": context.get("traits"),
             "coverage_score": context.get("coverage_score"),
             "coverage_gaps": context.get("coverage_gaps"),
@@ -117,9 +126,25 @@ async def start_forge(
     mode: str = Form("default"),
     model: str = Form("claude-sonnet-4-20250514"),
     culture_file: UploadFile | None = File(None),
+    trait_overrides: str = Form(""),
 ) -> dict:
     """Start a forge pipeline job. Returns a job_id for SSE streaming."""
     filename = file.filename or "upload.txt"
+
+    # Parse trait overrides (JSON string of {trait_name: float})
+    parsed_traits: dict[str, float] | None = None
+    if trait_overrides:
+        try:
+            raw = json.loads(trait_overrides)
+            parsed_traits = {
+                k: max(0.0, min(1.0, float(v)))
+                for k, v in raw.items()
+                if isinstance(k, str) and v is not None
+            }
+            if not parsed_traits:
+                parsed_traits = None
+        except (json.JSONDecodeError, TypeError, ValueError):
+            parsed_traits = None
     suffix = Path(filename).suffix.lower()
     if suffix not in _ALLOWED_EXTENSIONS:
         raise HTTPException(status_code=422, detail=f"Unsupported file type: {suffix}")
@@ -149,7 +174,7 @@ async def start_forge(
 
     thread = threading.Thread(
         target=_run_forge,
-        args=(job, file_path, mode, model, culture_path),
+        args=(job, file_path, mode, model, culture_path, filename, parsed_traits),
         daemon=True,
     )
     thread.start()
@@ -201,7 +226,9 @@ async def forge_download(job_id: str, file_type: str, request: Request):
         if not sf_data:
             raise HTTPException(status_code=404, detail="No skill available")
         content = sf_data["skill_md"]
-        safe_name = re.sub(r'[^\w\-.]', '_', sf_data["skill_name"])[:100] or "skill"
+        # Use source filename if available, fall back to skill_name
+        source = job.result.get("source_filename", "")
+        safe_name = source or re.sub(r'[^\w\-.]', '_', sf_data["skill_name"])[:100] or "skill"
         filename = f"{safe_name}_SKILL.md"
         media_type = "text/markdown"
     else:

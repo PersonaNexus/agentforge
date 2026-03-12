@@ -76,13 +76,13 @@
 
             <!-- What you get -->
             <div class="forge-outcome">
-                <div class="outcome-card">
+                <div class="outcome-card" title="A markdown file with YAML frontmatter containing the agent's identity, triggers, competencies, and workflows">
                     <div class="outcome-icon">&#128196;</div>
                     <div class="outcome-label">SKILL.md</div>
                     <div class="outcome-desc">Claude Code skill with YAML frontmatter, personality, competencies, and workflows</div>
                 </div>
                 <div class="outcome-arrow">&rarr;</div>
-                <div class="outcome-card">
+                <div class="outcome-card" title="The Claude Code skills directory in your project. Claude auto-invokes skills based on their description keywords.">
                     <div class="outcome-icon">&#128193;</div>
                     <div class="outcome-label">.claude/skills/</div>
                     <div class="outcome-desc">Drop the file in and Claude instantly gains the role's expertise</div>
@@ -136,7 +136,7 @@
                         <h3>Configure Pipeline</h3>
                         <div class="config-grid">
                             <div class="config-card">
-                                <label class="config-label">Pipeline Mode</label>
+                                <label class="config-label" title="Controls which pipeline stages run. Default includes culture mapping and gap analysis.">Pipeline Mode <span class="info-icon" aria-label="Controls which stages run">&#9432;</span></label>
                                 <select name="mode">
                                     <option value="default" selected>Default &mdash; full analysis</option>
                                     <option value="quick">Quick &mdash; skip culture &amp; gap analysis</option>
@@ -145,7 +145,7 @@
                                 <small class="config-hint">Default is recommended for most use cases</small>
                             </div>
                             <div class="config-card">
-                                <label class="config-label">Model</label>
+                                <label class="config-label" title="The LLM used for extraction and generation. Claude Sonnet 4 produces the most detailed skills.">Model <span class="info-icon" aria-label="Which LLM to use">&#9432;</span></label>
                                 <select name="model">
                                     <optgroup label="Anthropic">
                                         <option value="claude-sonnet-4-20250514" selected>Claude Sonnet 4</option>
@@ -159,16 +159,29 @@
                                 <small class="config-hint">Claude Sonnet 4 gives the best results</small>
                             </div>
                         </div>
+
+                        <!-- Personality Sliders -->
+                        <div class="personality-section">
+                            <div class="personality-header">
+                                <h4>Personality <span class="info-icon" title="Shape the agent's communication style. The pipeline will extract suggested values from the JD &mdash; these sliders let you override them. Leave untouched to use auto-detected values.">&#9432;</span></h4>
+                                <button type="button" class="secondary outline personality-reset-btn" id="trait-reset-btn" title="Reset all sliders to auto-detect">Reset</button>
+                            </div>
+                            <div class="trait-sliders" id="trait-sliders">
+                                <!-- Populated by JS -->
+                            </div>
+                            <input type="hidden" name="trait_overrides" id="trait-overrides-input" value="">
+                        </div>
+
                         <details class="config-advanced">
                             <summary>Advanced Options</summary>
                             <div class="config-grid">
                                 <div class="config-card">
-                                    <label class="config-label">Culture File</label>
+                                    <label class="config-label" title="A YAML file defining organizational values and communication norms. Applies trait deltas on top of extracted personality.">Culture File <span class="info-icon">&#9432;</span></label>
                                     <input type="file" name="culture_file" accept=".yaml,.yml">
                                     <small class="config-hint">Optional YAML culture profile to shape personality</small>
                                 </div>
                                 <div class="config-card">
-                                    <label class="config-label">Salary Range</label>
+                                    <label class="config-label" title="Used to calculate estimated annual value and ROI of the AI agent versus the human role cost.">Salary Range <span class="info-icon">&#9432;</span></label>
                                     <div class="salary-row">
                                         <input type="number" name="salary_min" placeholder="Min $" min="0" step="1000">
                                         <span class="salary-dash">&ndash;</span>
@@ -180,7 +193,7 @@
                         </details>
                         <div class="wizard-nav">
                             <button type="button" class="wizard-back-btn" id="forge-back-2">&larr; Back</button>
-                            <button type="button" class="wizard-next-btn" id="forge-next-2">Forge It &rarr;</button>
+                            <button type="button" class="wizard-next-btn" id="forge-next-2" title="Start the forge pipeline with current settings">Forge It &rarr;</button>
                         </div>
                     </div>
 

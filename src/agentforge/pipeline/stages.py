@@ -75,6 +75,14 @@ class GenerateStage(PipelineStage):
         from agentforge.generation.skill_file import SkillFileGenerator
         from agentforge.generation.skill_folder import SkillFolderGenerator
 
+        # Apply user trait overrides to extraction before generating
+        trait_overrides = context.get("trait_overrides")
+        if trait_overrides:
+            extraction = context["extraction"]
+            for trait_name, value in trait_overrides.items():
+                if hasattr(extraction.suggested_traits, trait_name):
+                    setattr(extraction.suggested_traits, trait_name, value)
+
         generator = context.get("identity_generator") or IdentityGenerator()
         identity, yaml_str = generator.generate(context["extraction"])
         context["identity"] = identity

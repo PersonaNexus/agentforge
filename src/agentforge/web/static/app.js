@@ -837,6 +837,74 @@ function initForgeWizard() {
     nextBtn.addEventListener('click', () => forgeShowStep(2));
     document.getElementById('forge-back-2').addEventListener('click', () => forgeShowStep(1));
     document.getElementById('forge-next-2').addEventListener('click', () => startForge());
+
+    // Personality sliders
+    initTraitSliders();
+}
+
+// ========== PERSONALITY TRAIT SLIDERS ==========
+const TRAIT_DEFS = [
+    { key: 'rigor',              label: 'Rigor',              tip: 'How precise and detail-oriented. High = meticulous, low = big-picture.' },
+    { key: 'directness',         label: 'Directness',         tip: 'How straightforward in communication. High = blunt and clear, low = diplomatic.' },
+    { key: 'warmth',             label: 'Warmth',             tip: 'How friendly and approachable the tone. High = warm, low = professional/detached.' },
+    { key: 'creativity',         label: 'Creativity',         tip: 'How inventive in problem-solving. High = novel approaches, low = proven methods.' },
+    { key: 'verbosity',          label: 'Verbosity',          tip: 'How detailed responses are. High = thorough explanations, low = concise.' },
+    { key: 'patience',           label: 'Patience',           tip: 'How much step-by-step explanation. High = patient teaching, low = expects expertise.' },
+    { key: 'empathy',            label: 'Empathy',            tip: 'How much emotional context is considered. High = emotionally aware, low = purely logical.' },
+    { key: 'epistemic_humility', label: 'Epistemic Humility', tip: 'How readily the agent acknowledges uncertainty. High = cautious, low = confident.' },
+];
+
+const TRAIT_DEFAULT = 0.5;
+let _traitModified = {};  // track which traits user has touched
+
+function initTraitSliders() {
+    const container = document.getElementById('trait-sliders');
+    container.innerHTML = TRAIT_DEFS.map(t => `
+        <div class="trait-slider-row">
+            <label class="trait-slider-label" title="${t.tip}">
+                ${t.label} <span class="info-icon">&#9432;</span>
+            </label>
+            <input type="range" class="trait-slider-input" id="trait-${t.key}"
+                   data-trait="${t.key}" min="0" max="100" value="50" step="1">
+            <span class="trait-slider-value" id="trait-val-${t.key}">auto</span>
+        </div>
+    `).join('');
+
+    // Slider event listeners
+    container.querySelectorAll('.trait-slider-input').forEach(slider => {
+        slider.addEventListener('input', () => {
+            const trait = slider.dataset.trait;
+            const pct = parseInt(slider.value);
+            document.getElementById('trait-val-' + trait).textContent = pct + '%';
+            slider.classList.add('modified');
+            _traitModified[trait] = pct / 100;
+            updateTraitOverridesInput();
+        });
+    });
+
+    // Reset button
+    document.getElementById('trait-reset-btn').addEventListener('click', resetTraitSliders);
+}
+
+function resetTraitSliders() {
+    _traitModified = {};
+    document.querySelectorAll('.trait-slider-input').forEach(slider => {
+        slider.value = 50;
+        slider.classList.remove('modified');
+    });
+    document.querySelectorAll('.trait-slider-value').forEach(el => {
+        el.textContent = 'auto';
+    });
+    document.getElementById('trait-overrides-input').value = '';
+}
+
+function updateTraitOverridesInput() {
+    const input = document.getElementById('trait-overrides-input');
+    if (Object.keys(_traitModified).length > 0) {
+        input.value = JSON.stringify(_traitModified);
+    } else {
+        input.value = '';
+    }
 }
 
 function initForgeStages(mode) {
@@ -998,6 +1066,7 @@ window.forgeReset = function() {
     document.getElementById('forge-next-1').disabled = true;
     document.getElementById('forge-results').innerHTML = '';
     document.getElementById('forge-stages').innerHTML = '';
+    resetTraitSliders();
     forgeShowStep(1);
 };
 
