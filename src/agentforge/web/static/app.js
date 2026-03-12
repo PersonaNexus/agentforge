@@ -653,13 +653,16 @@ function renderAgentTeam(team) {
 function renderExtractionResult(data, salaryMin, salaryMax) {
     const valueEstimate = computeAgentValue(data, salaryMin, salaryMax);
     const team = composeAgentTeam(data);
-    return renderRolePanel(data.role)
+    let html = renderRolePanel(data.role)
         + renderAgentTeam(team)
         + renderSkillsTable(data.skills)
         + renderHumanElements(data.skills, data.responsibilities)
         + renderSuggestedTraits(data.suggested_traits)
         + renderAutomation(data.automation_potential, data.automation_rationale)
         + renderAgentValue(valueEstimate);
+    if (data.mapped_traits) html += renderTraitBars(data.mapped_traits);
+    html += renderGapAnalysis(data.coverage_score, data.coverage_gaps);
+    return html;
 }
 
 function renderCultureProfile(profile) {

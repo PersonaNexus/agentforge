@@ -43,7 +43,21 @@ async def extract(
         extractor = SkillExtractor(client=client)
         result = extractor.extract(jd)
 
-        return json.loads(result.model_dump_json())
+        # Run gap analysis and trait mapping
+        from agentforge.analysis.gap_analyzer import GapAnalyzer
+        from agentforge.mapping.trait_mapper import TraitMapper
+
+        analyzer = GapAnalyzer()
+        coverage_score, coverage_gaps = analyzer.analyze(result)
+
+        mapper = TraitMapper()
+        mapped_traits = mapper.map_traits(result)
+
+        response = json.loads(result.model_dump_json())
+        response["coverage_score"] = coverage_score
+        response["coverage_gaps"] = coverage_gaps
+        response["mapped_traits"] = mapped_traits
+        return response
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

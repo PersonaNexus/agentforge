@@ -688,6 +688,17 @@
     font-size: 0.9rem;
     opacity: 0.6;
 }
+.upload-zone-browse {
+    font-size: 0.85rem;
+    margin-top: 0.25rem;
+    opacity: 0.5;
+}
+.upload-zone-browse-link {
+    color: var(--af-blue);
+    text-decoration: underline;
+    font-weight: 600;
+    cursor: pointer;
+}
 .upload-zone-filename {
     font-weight: 600;
     font-size: 1rem;
