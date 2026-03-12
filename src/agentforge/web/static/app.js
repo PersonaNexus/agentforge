@@ -1001,7 +1001,7 @@ function renderForgeResults(data, jobId, salaryMin, salaryMax) {
     html += `<div class="forge-success-hero">
         <div class="forge-success-icon">&#10003;</div>
         <div class="forge-success-title">${esc(bp.extraction.role.title)}</div>
-        <div class="forge-success-subtitle">Your Claude Code skill <code>${esc(skillName)}</code> is ready</div>
+        <div class="forge-success-subtitle">${data.clawhub_skill && data.skill_folder ? 'Your Claude Code &amp; ClawHub skills are' : data.clawhub_skill ? 'Your ClawHub skill is' : 'Your Claude Code skill <code>' + esc(skillName) + '</code> is'} ready</div>
     </div>`;
 
     // Stats bar
@@ -1020,17 +1020,33 @@ function renderForgeResults(data, jobId, salaryMin, salaryMax) {
         </div>
     </div>`;
 
-    // Primary download
-    html += `<div class="forge-download-hero">
-        <a href="/api/forge/${jobId}/download/skill" role="button">Download SKILL.md</a>
-        <div class="forge-download-hint">Save to <code>.claude/skills/${esc(skillName)}/SKILL.md</code></div>
-    </div>`;
+    // Primary download(s)
+    if (data.skill_folder) {
+        html += `<div class="forge-download-hero">
+            <a href="/api/forge/${jobId}/download/skill" role="button">Download SKILL.md</a>
+            <div class="forge-download-hint">Save to <code>.claude/skills/${esc(skillName)}/SKILL.md</code></div>
+        </div>`;
+    }
 
-    // Skill preview
+    if (data.clawhub_skill) {
+        const chName = data.clawhub_skill.skill_name;
+        html += `<div class="forge-download-hero" style="margin-top:0.5rem;">
+            <a href="/api/forge/${jobId}/download/clawhub" role="button" class="secondary">Download ClawHub SKILL.md</a>
+            <div class="forge-download-hint">ClawHub/OpenClaw format &mdash; <code>${esc(chName)}</code></div>
+        </div>`;
+    }
+
+    // Skill preview(s)
     if (skillMd) {
         html += `<details class="forge-skill-preview">
             <summary>Preview SKILL.md</summary>
             <pre>${esc(skillMd)}</pre>
+        </details>`;
+    }
+    if (data.clawhub_skill) {
+        html += `<details class="forge-skill-preview">
+            <summary>Preview ClawHub SKILL.md</summary>
+            <pre>${esc(data.clawhub_skill.skill_md)}</pre>
         </details>`;
     }
 

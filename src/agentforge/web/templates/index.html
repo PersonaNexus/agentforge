@@ -158,6 +158,15 @@
                                 </select>
                                 <small class="config-hint">Claude Sonnet 4 gives the best results</small>
                             </div>
+                            <div class="config-card">
+                                <label class="config-label" title="Choose the output format for the generated skill. Claude Code uses YAML frontmatter with personality and methodology. ClawHub uses a concise, action-oriented format with runtime metadata for the OpenClaw registry.">Output Format <span class="info-icon" aria-label="Skill output target">&#9432;</span></label>
+                                <select name="output_format">
+                                    <option value="claude_code" selected>Claude Code Skill</option>
+                                    <option value="clawhub">ClawHub Skill (OpenClaw)</option>
+                                    <option value="both">Both Formats</option>
+                                </select>
+                                <small class="config-hint">ClawHub skills are concise and action-oriented; Claude Code skills include persona + methodology</small>
+                            </div>
                         </div>
 
                         <!-- Personality Sliders -->

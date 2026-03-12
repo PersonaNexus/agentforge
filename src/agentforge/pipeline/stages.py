@@ -94,6 +94,8 @@ class GenerateStage(PipelineStage):
         from agentforge.generation.skill_file import SkillFileGenerator
         from agentforge.generation.skill_folder import SkillFolderGenerator
 
+        output_format = context.get("output_format", "claude_code")
+
         # Apply user trait overrides to extraction before generating
         trait_overrides = context.get("trait_overrides")
         if trait_overrides:
@@ -112,15 +114,40 @@ class GenerateStage(PipelineStage):
             context["extraction"], jd=context.get("jd")
         )
 
-        skill_folder_gen = SkillFolderGenerator()
-        context["skill_folder"] = skill_folder_gen.generate(
-            context["extraction"],
-            identity,
-            jd=context.get("jd"),
-            methodology=context.get("methodology"),
-            user_examples=context.get("user_examples", ""),
-            user_frameworks=context.get("user_frameworks", ""),
-        )
+        # Claude Code skill folder (always generated — used by reference SKILL.md too)
+        if output_format in ("claude_code", "both"):
+            skill_folder_gen = SkillFolderGenerator()
+            context["skill_folder"] = skill_folder_gen.generate(
+                context["extraction"],
+                identity,
+                jd=context.get("jd"),
+                methodology=context.get("methodology"),
+                user_examples=context.get("user_examples", ""),
+                user_frameworks=context.get("user_frameworks", ""),
+            )
+
+        # ClawHub skill
+        if output_format in ("clawhub", "both"):
+            from agentforge.generation.clawhub_skill import ClawHubSkillGenerator
+
+            clawhub_gen = ClawHubSkillGenerator()
+            context["clawhub_skill"] = clawhub_gen.generate(
+                context["extraction"],
+                jd=context.get("jd"),
+                methodology=context.get("methodology"),
+            )
+
+        # If only ClawHub requested, copy it to skill_folder for backward compat
+        if output_format == "clawhub" and "skill_folder" not in context:
+            skill_folder_gen = SkillFolderGenerator()
+            context["skill_folder"] = skill_folder_gen.generate(
+                context["extraction"],
+                identity,
+                jd=context.get("jd"),
+                methodology=context.get("methodology"),
+                user_examples=context.get("user_examples", ""),
+                user_frameworks=context.get("user_frameworks", ""),
+            )
 
         return context
 

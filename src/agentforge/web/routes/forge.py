@@ -45,6 +45,7 @@ def _run_forge(
     trait_overrides: dict[str, float] | None = None,
     user_examples: str = "",
     user_frameworks: str = "",
+    output_format: str = "claude_code",
 ) -> None:
     """Worker thread: runs the forge pipeline and emits SSE events."""
     try:
@@ -87,6 +88,7 @@ def _run_forge(
             context["user_examples"] = user_examples
         if user_frameworks:
             context["user_frameworks"] = user_frameworks
+        context["output_format"] = output_format
 
         context = pipeline.run(context)
         blueprint = pipeline.to_blueprint(context)
@@ -97,6 +99,7 @@ def _run_forge(
 
         # Build result
         sf = context.get("skill_folder")
+        ch = context.get("clawhub_skill")
         result: dict[str, Any] = {
             "blueprint": json.loads(blueprint.model_dump_json()),
             "identity_yaml": context.get("identity_yaml", ""),
@@ -109,6 +112,10 @@ def _run_forge(
                 "skill_md": sf.skill_md,
                 "skill_name": sf.skill_name,
             } if sf else None,
+            "clawhub_skill": {
+                "skill_md": ch.skill_md,
+                "skill_name": ch.skill_name,
+            } if ch else None,
         }
 
         # Include agent team composition
@@ -136,6 +143,7 @@ async def start_forge(
     trait_overrides: str = Form(""),
     user_examples: str = Form(""),
     user_frameworks: str = Form(""),
+    output_format: str = Form("claude_code"),
 ) -> dict:
     """Start a forge pipeline job. Returns a job_id for SSE streaming."""
     filename = file.filename or "upload.txt"
@@ -184,7 +192,7 @@ async def start_forge(
     thread = threading.Thread(
         target=_run_forge,
         args=(job, file_path, mode, model, culture_path, filename, parsed_traits,
-              user_examples, user_frameworks),
+              user_examples, user_frameworks, output_format),
         daemon=True,
     )
     thread.start()
@@ -236,10 +244,18 @@ async def forge_download(job_id: str, file_type: str, request: Request):
         if not sf_data:
             raise HTTPException(status_code=404, detail="No skill available")
         content = sf_data["skill_md"]
-        # Use source filename if available, fall back to skill_name
         source = job.result.get("source_filename", "")
         safe_name = source or re.sub(r'[^\w\-.]', '_', sf_data["skill_name"])[:100] or "skill"
         filename = f"{safe_name}_SKILL.md"
+        media_type = "text/markdown"
+    elif file_type == "clawhub":
+        ch_data = job.result.get("clawhub_skill")
+        if not ch_data:
+            raise HTTPException(status_code=404, detail="No ClawHub skill available")
+        content = ch_data["skill_md"]
+        source = job.result.get("source_filename", "")
+        safe_name = source or re.sub(r'[^\w\-.]', '_', ch_data["skill_name"])[:100] or "skill"
+        filename = f"{safe_name}_clawhub_SKILL.md"
         media_type = "text/markdown"
     else:
         raise HTTPException(status_code=400, detail="Invalid file type")
