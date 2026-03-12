@@ -1039,6 +1039,14 @@ function renderForgeResults(data, jobId, salaryMin, salaryMax) {
         </div>`;
     }
 
+    // ZIP download (always available — includes SKILL.md + identity YAML + any references)
+    if (data.skill_folder) {
+        html += `<div class="forge-download-hero" id="forge-zip-download" style="margin-top:0.5rem;">
+            <a href="/api/forge/${jobId}/download/zip" role="button" class="secondary outline">Download Skill Folder (ZIP)</a>
+            <div class="forge-download-hint">Complete folder: SKILL.md + identity YAML${data.clawhub_skill ? ' + ClawHub' : ''} — ready to drop into <code>.claude/skills/</code></div>
+        </div>`;
+    }
+
     // Forge another (top action bar)
     html += `<div class="forge-top-actions">
         <button type="button" class="forge-another-btn" onclick="forgeReset()">Forge Another</button>
@@ -1222,11 +1230,21 @@ async function refineSkill(jobId) {
             reviewPanel.replaceWith(newReview.firstElementChild);
         }
 
+        // Update zip download hint if references were added
+        if (result.has_references) {
+            const zipEl = document.getElementById('forge-zip-download');
+            if (zipEl) {
+                const hint = zipEl.querySelector('.forge-download-hint');
+                if (hint) hint.innerHTML = 'Complete folder: SKILL.md + reference files + identity YAML — ready to drop into <code>.claude/skills/</code>';
+            }
+        }
+
         // Show success feedback
         const newStatus = document.getElementById('skill-refine-status');
         if (newStatus) {
             const resolvedCount = appliedCount;
-            newStatus.innerHTML = `<div class="skill-refine-success">Applied ${resolvedCount} update${resolvedCount !== 1 ? 's' : ''} — skill regenerated.${remainingGaps.length === 0 ? ' All suggestions addressed!' : ''}</div>`;
+            const refMsg = result.has_references ? ' Reference files included in ZIP.' : '';
+            newStatus.innerHTML = `<div class="skill-refine-success">Applied ${resolvedCount} update${resolvedCount !== 1 ? 's' : ''} — skill regenerated.${refMsg}${remainingGaps.length === 0 ? ' All suggestions addressed!' : ''}</div>`;
             setTimeout(() => { if (newStatus) newStatus.innerHTML = ''; }, 5000);
         }
     } catch (err) {

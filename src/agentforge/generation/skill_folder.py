@@ -39,10 +39,19 @@ from agentforge.utils import make_skill_slug, truncate_description
 
 
 class SkillFolderResult(BaseModel):
-    """Container for Claude Code-compatible skill folder content."""
+    """Container for Claude Code-compatible skill folder content.
+
+    The skill folder maps to .claude/skills/<skill_name>/ and can contain
+    SKILL.md plus supplementary reference files (examples, templates, etc.)
+    that the skill instructions can reference.
+    """
 
     skill_name: str = Field(..., description="Slug name for the skill folder")
     skill_md: str = Field(..., description="SKILL.md content with YAML frontmatter")
+    supplementary_files: dict[str, str] = Field(
+        default_factory=dict,
+        description="Additional files for the skill folder: {relative_path: content}",
+    )
 
 
 class SkillFolderGenerator:

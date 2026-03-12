@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import io
 import json
 import tempfile
 import threading
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -124,6 +126,7 @@ def _run_forge(
             "skill_folder": {
                 "skill_md": sf.skill_md,
                 "skill_name": sf.skill_name,
+                "supplementary_files": dict(sf.supplementary_files),
             } if sf else None,
             "clawhub_skill": {
                 "skill_md": ch.skill_md,
@@ -294,6 +297,52 @@ async def forge_download(job_id: str, file_type: str, request: Request):
     )
 
 
+@router.get("/forge/{job_id}/download/zip")
+async def forge_download_zip(job_id: str, request: Request) -> StreamingResponse:
+    """Download the skill folder as a ZIP with SKILL.md + reference files."""
+    store = _get_store(request)
+    job = store.get(job_id)
+    if not job or not job.result:
+        raise HTTPException(status_code=404, detail="Job not found or not complete")
+
+    sf_data = job.result.get("skill_folder")
+    if not sf_data:
+        raise HTTPException(status_code=404, detail="No skill folder available")
+
+    skill_name = sf_data.get("skill_name", "skill")
+    source = job.result.get("source_filename", "")
+    zip_name = source or safe_filename(skill_name)[:100] or "skill"
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        # Main SKILL.md
+        zf.writestr(f"{skill_name}/SKILL.md", sf_data["skill_md"])
+
+        # Supplementary reference files
+        for rel_path, content in sf_data.get("supplementary_files", {}).items():
+            zf.writestr(f"{skill_name}/{rel_path}", content)
+
+        # ClawHub skill if available
+        ch_data = job.result.get("clawhub_skill")
+        if ch_data:
+            zf.writestr(f"{skill_name}/CLAWHUB_SKILL.md", ch_data["skill_md"])
+
+        # Identity YAML
+        identity_yaml = job.result.get("identity_yaml", "")
+        if identity_yaml:
+            zf.writestr(f"{skill_name}/agent_identity.yaml", identity_yaml)
+
+    buffer.seek(0)
+
+    return StreamingResponse(
+        buffer,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{zip_name}_skill.zip"'
+        },
+    )
+
+
 @router.post("/forge/{job_id}/refine")
 async def refine_skill(job_id: str, request: Request) -> dict:
     """Refine a generated skill by merging user edits into gap areas.
@@ -333,9 +382,15 @@ async def refine_skill(job_id: str, request: Request) -> dict:
         else None
     )
 
-    # Merge user edits
+    # Merge user edits (may produce supplementary reference files)
     refiner = SkillRefiner()
-    extraction, methodology = refiner.merge(extraction, methodology, edits)
+    extraction, methodology, new_files = refiner.merge(
+        extraction, methodology, edits,
+    )
+
+    # Accumulate supplementary files across refine cycles
+    existing_files: dict[str, str] = refine_ctx.get("supplementary_files", {})
+    existing_files.update(new_files)
 
     # Regenerate identity + skill files with enriched data
     generator = IdentityGenerator()
@@ -358,9 +413,11 @@ async def refine_skill(job_id: str, request: Request) -> dict:
             user_examples=user_examples,
             user_frameworks=user_frameworks,
         )
+        sf.supplementary_files = existing_files
         result_update["skill_folder"] = {
             "skill_md": sf.skill_md,
             "skill_name": sf.skill_name,
+            "supplementary_files": sf.supplementary_files,
         }
 
     if output_format in ("clawhub", "both"):
@@ -391,6 +448,10 @@ async def refine_skill(job_id: str, request: Request) -> dict:
     # Also update the refine context for further refinements
     job.result["_refine_context"]["extraction"] = extraction.model_dump(mode="json")
     job.result["_refine_context"]["methodology"] = methodology.model_dump(mode="json")
+    job.result["_refine_context"]["supplementary_files"] = existing_files
+
+    # Track whether skill folder has reference files (for zip download)
+    has_references = bool(existing_files)
 
     # Return only the updated fields to the frontend
     return {
@@ -398,4 +459,5 @@ async def refine_skill(job_id: str, request: Request) -> dict:
         "clawhub_skill": result_update.get("clawhub_skill"),
         "skill_gaps": skill_gaps,
         "identity_yaml": yaml_str,
+        "has_references": has_references,
     }

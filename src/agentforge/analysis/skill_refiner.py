@@ -26,19 +26,30 @@ class SkillRefiner:
         extraction: ExtractionResult,
         methodology: MethodologyExtraction | None,
         edits: dict[str, str],
-    ) -> tuple[ExtractionResult, MethodologyExtraction]:
+        uploaded_files: dict[str, str] | None = None,
+    ) -> tuple[ExtractionResult, MethodologyExtraction, dict[str, str]]:
         """Merge user edits into extraction and methodology.
 
         Args:
             extraction: Original extraction result.
             methodology: Original methodology (may be None).
             edits: Dict of {gap_category: user_text}.
+            uploaded_files: Dict of {filename: content} from file uploads.
 
         Returns:
-            Updated (extraction, methodology) tuple.
+            Tuple of (extraction, methodology, supplementary_files).
+            supplementary_files maps relative paths to content for the
+            skill folder (e.g. "references/example-report.md": "...").
         """
         meth = methodology.model_copy(deep=True) if methodology else MethodologyExtraction()
         ext = extraction.model_copy(deep=True)
+        supplementary: dict[str, str] = {}
+
+        # Include uploaded files as reference documents
+        if uploaded_files:
+            for filename, content in uploaded_files.items():
+                safe_name = self._safe_filename(filename)
+                supplementary[f"references/{safe_name}"] = content
 
         for category, text in edits.items():
             text = text.strip()
@@ -50,7 +61,7 @@ class SkillRefiner:
             elif category == "triggers":
                 self._merge_triggers(meth, text)
             elif category == "templates":
-                self._merge_templates(meth, text)
+                self._merge_templates(meth, text, supplementary)
             elif category == "quality":
                 self._merge_quality(meth, text)
             elif category == "domain":
@@ -60,11 +71,11 @@ class SkillRefiner:
             elif category == "scope":
                 self._merge_scope(ext, text)
             elif category == "examples":
-                self._merge_examples(meth, text)
+                self._merge_examples(meth, text, supplementary)
             elif category == "frameworks":
-                self._merge_frameworks(meth, text)
+                self._merge_frameworks(meth, text, supplementary)
 
-        return ext, meth
+        return ext, meth, supplementary
 
     # ------------------------------------------------------------------
     # Merge strategies per category
@@ -104,8 +115,11 @@ class SkillRefiner:
                     technique="Apply standard approach",
                 ))
 
-    def _merge_templates(self, meth: MethodologyExtraction, text: str) -> None:
-        """Add user text as an output template."""
+    def _merge_templates(
+        self, meth: MethodologyExtraction, text: str,
+        supplementary: dict[str, str] | None = None,
+    ) -> None:
+        """Add user text as an output template + reference file."""
         # Treat entire text as a single template
         name = "User-Provided Template"
         # Try to extract a name from the first line
@@ -121,6 +135,15 @@ class SkillRefiner:
             when_to_use="As the primary output format for this skill",
             template=text,
         ))
+
+        # Also save as a reference file if content is substantial
+        if supplementary is not None and len(text) > 100:
+            slug = self._safe_filename(name)
+            supplementary[f"references/{slug}.md"] = (
+                f"# {name}\n\n"
+                "Use this as a reference template for output formatting.\n\n"
+                f"{text}"
+            )
 
     def _merge_quality(self, meth: MethodologyExtraction, text: str) -> None:
         """Parse user text as quality criteria."""
@@ -191,12 +214,27 @@ class SkillRefiner:
             ext.role.scope_secondary = []
         ext.role.scope_secondary.extend(entries)
 
-    def _merge_examples(self, meth: MethodologyExtraction, text: str) -> None:
-        """Treat user examples as output templates."""
-        self._merge_templates(meth, text)
+    def _merge_examples(
+        self, meth: MethodologyExtraction, text: str,
+        supplementary: dict[str, str] | None = None,
+    ) -> None:
+        """Treat user examples as output templates + reference files."""
+        self._merge_templates(meth, text, supplementary)
 
-    def _merge_frameworks(self, meth: MethodologyExtraction, text: str) -> None:
-        """Parse user frameworks as heuristics."""
+        # Always save examples as a standalone reference file
+        if supplementary is not None:
+            supplementary["references/work-examples.md"] = (
+                "# Work Examples\n\n"
+                "Real-world examples provided by the skill author. "
+                "Use these as reference for tone, structure, and quality.\n\n"
+                f"{text}"
+            )
+
+    def _merge_frameworks(
+        self, meth: MethodologyExtraction, text: str,
+        supplementary: dict[str, str] | None = None,
+    ) -> None:
+        """Parse user frameworks as heuristics + reference file."""
         entries = self._split_entries(text)
         for entry in entries:
             meth.heuristics.append(Heuristic(
@@ -204,6 +242,15 @@ class SkillRefiner:
                 procedure=f"Follow the {entry} framework/methodology",
                 source_responsibility="User-provided framework",
             ))
+
+        # Save as a reference file
+        if supplementary is not None and text.strip():
+            supplementary["references/frameworks.md"] = (
+                "# Frameworks & Methodologies\n\n"
+                "These frameworks should guide decision-making in this skill.\n\n"
+                + "\n".join(f"- {e}" for e in entries)
+                + "\n"
+            )
 
     # ------------------------------------------------------------------
     # Helpers
@@ -246,3 +293,13 @@ class SkillRefiner:
 
         # Return as single entry
         return [lines]
+
+    @staticmethod
+    def _safe_filename(name: str) -> str:
+        """Convert a name to a safe filename slug."""
+        import re
+
+        slug = name.lower().strip()
+        slug = re.sub(r"[^\w\s-]", "", slug)
+        slug = re.sub(r"[\s_-]+", "-", slug).strip("-")
+        return slug[:80] or "file"

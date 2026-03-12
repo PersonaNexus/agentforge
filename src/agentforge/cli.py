@@ -351,9 +351,18 @@ def forge(
         folder_path = safe_output_path(output_dir, sf.skill_name)
         folder_path.mkdir(exist_ok=True)
         (folder_path / "SKILL.md").write_text(sf.skill_md)
+
+        # Write supplementary reference files
+        for rel_path, content in sf.supplementary_files.items():
+            ref_path = folder_path / rel_path
+            ref_path.parent.mkdir(parents=True, exist_ok=True)
+            ref_path.write_text(content)
+
+        ref_count = len(sf.supplementary_files)
+        ref_msg = f" + {ref_count} reference file{'s' if ref_count != 1 else ''}" if ref_count else ""
         console.print(
             f"[green]Claude Code skill saved:[/green] {folder_path}/\n"
-            f"  [dim]Copy to .claude/skills/ or ~/.claude/skills/ to use[/dim]"
+            f"  [dim]SKILL.md{ref_msg} — copy to .claude/skills/ or ~/.claude/skills/ to use[/dim]"
         )
 
     # Build blueprint

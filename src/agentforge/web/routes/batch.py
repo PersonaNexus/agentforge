@@ -83,6 +83,8 @@ def _run_batch(
                 if bp.skill_folder:
                     skill_name = bp.skill_folder.skill_name
                     output_files[f"{skill_name}/SKILL.md"] = bp.skill_folder.skill_md
+                    for rel_path, content in bp.skill_folder.supplementary_files.items():
+                        output_files[f"{skill_name}/{rel_path}"] = content
 
             results_data.append(entry)
 
