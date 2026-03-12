@@ -1036,7 +1036,11 @@ function renderForgeResults(data, jobId, salaryMin, salaryMax) {
         </div>`;
     }
 
+    // Skill review & refine panel
+    html += renderSkillReview(data.skill_gaps || [], jobId);
+
     // Skill preview(s)
+    html += `<div id="skill-preview-container">`;
     if (skillMd) {
         html += `<details class="forge-skill-preview">
             <summary>Preview SKILL.md</summary>
@@ -1049,6 +1053,7 @@ function renderForgeResults(data, jobId, salaryMin, salaryMax) {
             <pre>${esc(data.clawhub_skill.skill_md)}</pre>
         </details>`;
     }
+    html += `</div>`;
 
     // Detailed analysis (collapsible)
     html += `<details style="margin-top:1rem;"><summary style="font-weight:600;">Detailed Analysis</summary>`;
@@ -1088,6 +1093,114 @@ window.forgeReset = function() {
     resetTraitSliders();
     forgeShowStep(1);
 };
+
+// ========== SKILL REVIEW & REFINE ==========
+
+function renderSkillReview(gaps, jobId) {
+    if (!gaps || gaps.length === 0) {
+        return `<details class="skill-review-panel">
+            <summary><span class="skill-review-header">Review &amp; Refine Skill</span></summary>
+            <div class="skill-review-empty">No gaps detected — your skill is well-defined!</div>
+        </details>`;
+    }
+
+    let html = `<details class="skill-review-panel" open>
+        <summary><span class="skill-review-header">Review &amp; Refine Skill
+            <span class="skill-review-count">${gaps.length} opportunity${gaps.length !== 1 ? 'ies' : 'y'}</span>
+        </span></summary>
+        <div class="skill-review-body">
+            <p style="font-size:0.82rem;opacity:0.65;margin:0 0 0.75rem;">Fill in any gaps below to strengthen your skill, then click Refine.</p>`;
+
+    for (const gap of gaps) {
+        html += `<div class="skill-gap-card" data-category="${esc(gap.category)}">
+            <div class="skill-gap-header">
+                <span class="skill-gap-priority ${esc(gap.priority)}">${esc(gap.priority)}</span>
+                <span class="skill-gap-title">${esc(gap.title)}</span>
+            </div>
+            <div class="skill-gap-description">${esc(gap.description)}</div>
+            <textarea class="skill-gap-textarea"
+                data-gap-category="${esc(gap.category)}"
+                placeholder="${esc(gap.edit_prompt)}"></textarea>
+        </div>`;
+    }
+
+    html += `<div class="skill-refine-actions">
+            <button type="button" class="skill-refine-btn" onclick="refineSkill('${esc(jobId)}')">Refine Skill</button>
+        </div>
+        </div>
+    </details>`;
+    return html;
+}
+
+async function refineSkill(jobId) {
+    const btn = document.querySelector('.skill-refine-btn');
+    if (!btn) return;
+    btn.setAttribute('aria-busy', 'true');
+    btn.textContent = 'Refining...';
+
+    // Collect edits from textareas
+    const edits = {};
+    document.querySelectorAll('.skill-gap-textarea').forEach(ta => {
+        const val = ta.value.trim();
+        if (val) {
+            edits[ta.dataset.gapCategory] = val;
+        }
+    });
+
+    if (Object.keys(edits).length === 0) {
+        btn.removeAttribute('aria-busy');
+        btn.textContent = 'Refine Skill';
+        alert('Please fill in at least one gap to refine the skill.');
+        return;
+    }
+
+    try {
+        const resp = await fetch(`/api/forge/${jobId}/refine`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ edits }),
+        });
+
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({ detail: 'Refinement failed' }));
+            throw new Error(err.detail || 'Refinement failed');
+        }
+
+        const result = await resp.json();
+
+        // Update skill previews
+        const previewContainer = document.getElementById('skill-preview-container');
+        if (previewContainer) {
+            let previewHtml = '';
+            if (result.skill_folder) {
+                previewHtml += `<details class="forge-skill-preview" open>
+                    <summary>Preview SKILL.md (Refined)</summary>
+                    <pre>${esc(result.skill_folder.skill_md)}</pre>
+                </details>`;
+            }
+            if (result.clawhub_skill) {
+                previewHtml += `<details class="forge-skill-preview" open>
+                    <summary>Preview ClawHub SKILL.md (Refined)</summary>
+                    <pre>${esc(result.clawhub_skill.skill_md)}</pre>
+                </details>`;
+            }
+            previewContainer.innerHTML = previewHtml;
+        }
+
+        // Update the review panel with remaining gaps
+        const reviewPanel = document.querySelector('.skill-review-panel');
+        if (reviewPanel) {
+            const newReview = document.createElement('div');
+            newReview.innerHTML = renderSkillReview(result.skill_gaps || [], jobId);
+            reviewPanel.replaceWith(newReview.firstElementChild);
+        }
+    } catch (err) {
+        alert('Refinement error: ' + err.message);
+    } finally {
+        btn.removeAttribute('aria-busy');
+        btn.textContent = 'Refine Skill';
+    }
+}
 
 // ========== BATCH ==========
 document.getElementById('batch-form').addEventListener('submit', async (e) => {

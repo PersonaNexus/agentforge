@@ -97,6 +97,19 @@ def _run_forge(
         stem = Path(original_filename).stem if original_filename else ""
         download_stem = safe_filename(stem)[:100] if stem else ""
 
+        # Run skill quality review
+        from agentforge.analysis.skill_reviewer import SkillReviewer
+
+        reviewer = SkillReviewer()
+        extraction = context.get("extraction")
+        methodology = context.get("methodology")
+        skill_gaps = reviewer.review_to_dict(
+            extraction,
+            methodology=methodology,
+            has_examples=bool(user_examples),
+            has_frameworks=bool(user_frameworks),
+        ) if extraction else []
+
         # Build result
         sf = context.get("skill_folder")
         ch = context.get("clawhub_skill")
@@ -116,6 +129,17 @@ def _run_forge(
                 "skill_md": ch.skill_md,
                 "skill_name": ch.skill_name,
             } if ch else None,
+            "skill_gaps": skill_gaps,
+        }
+
+        # Store pipeline context for refinement (serializable copies)
+        result["_refine_context"] = {
+            "extraction": extraction.model_dump(mode="json") if extraction else None,
+            "methodology": methodology.model_dump(mode="json") if methodology else None,
+            "identity_yaml": context.get("identity_yaml", ""),
+            "output_format": context.get("output_format", "claude_code"),
+            "user_examples": user_examples,
+            "user_frameworks": user_frameworks,
         }
 
         # Include agent team composition
@@ -268,3 +292,110 @@ async def forge_download(job_id: str, file_type: str, request: Request):
         media_type=media_type,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.post("/forge/{job_id}/refine")
+async def refine_skill(job_id: str, request: Request) -> dict:
+    """Refine a generated skill by merging user edits into gap areas.
+
+    Accepts a JSON body: {"edits": {"category": "user text", ...}}
+    Merges edits into the stored extraction/methodology, regenerates
+    the skill files, and returns the updated result with a fresh review.
+    """
+    from agentforge.analysis.skill_refiner import SkillRefiner
+    from agentforge.analysis.skill_reviewer import SkillReviewer
+    from agentforge.generation.identity_generator import IdentityGenerator
+    from agentforge.generation.skill_folder import SkillFolderGenerator
+    from agentforge.models.extracted_skills import (
+        ExtractionResult,
+        MethodologyExtraction,
+    )
+
+    store = _get_store(request)
+    job = store.get(job_id)
+    if not job or not job.result:
+        raise HTTPException(status_code=404, detail="Job not found or not complete")
+
+    refine_ctx = job.result.get("_refine_context")
+    if not refine_ctx or not refine_ctx.get("extraction"):
+        raise HTTPException(status_code=400, detail="No refinement context available")
+
+    body = await request.json()
+    edits: dict[str, str] = body.get("edits", {})
+    if not edits:
+        raise HTTPException(status_code=400, detail="No edits provided")
+
+    # Reconstruct models from stored JSON
+    extraction = ExtractionResult.model_validate(refine_ctx["extraction"])
+    methodology = (
+        MethodologyExtraction.model_validate(refine_ctx["methodology"])
+        if refine_ctx.get("methodology")
+        else None
+    )
+
+    # Merge user edits
+    refiner = SkillRefiner()
+    extraction, methodology = refiner.merge(extraction, methodology, edits)
+
+    # Regenerate identity + skill files with enriched data
+    generator = IdentityGenerator()
+    identity, yaml_str = generator.generate(extraction)
+
+    output_format = refine_ctx.get("output_format", "claude_code")
+    user_examples = refine_ctx.get("user_examples", "")
+    user_frameworks = refine_ctx.get("user_frameworks", "")
+
+    result_update: dict[str, Any] = {
+        "identity_yaml": yaml_str,
+    }
+
+    if output_format in ("claude_code", "both"):
+        skill_folder_gen = SkillFolderGenerator()
+        sf = skill_folder_gen.generate(
+            extraction, identity,
+            jd=None,
+            methodology=methodology,
+            user_examples=user_examples,
+            user_frameworks=user_frameworks,
+        )
+        result_update["skill_folder"] = {
+            "skill_md": sf.skill_md,
+            "skill_name": sf.skill_name,
+        }
+
+    if output_format in ("clawhub", "both"):
+        from agentforge.generation.clawhub_skill import ClawHubSkillGenerator
+
+        clawhub_gen = ClawHubSkillGenerator()
+        ch = clawhub_gen.generate(
+            extraction, jd=None, methodology=methodology,
+        )
+        result_update["clawhub_skill"] = {
+            "skill_md": ch.skill_md,
+            "skill_name": ch.skill_name,
+        }
+
+    # Re-run skill quality review
+    reviewer = SkillReviewer()
+    skill_gaps = reviewer.review_to_dict(
+        extraction,
+        methodology=methodology,
+        has_examples=bool(user_examples) or "examples" in edits,
+        has_frameworks=bool(user_frameworks) or "frameworks" in edits,
+    )
+    result_update["skill_gaps"] = skill_gaps
+
+    # Update stored job result
+    job.result.update(result_update)
+
+    # Also update the refine context for further refinements
+    job.result["_refine_context"]["extraction"] = extraction.model_dump(mode="json")
+    job.result["_refine_context"]["methodology"] = methodology.model_dump(mode="json")
+
+    # Return only the updated fields to the frontend
+    return {
+        "skill_folder": result_update.get("skill_folder"),
+        "clawhub_skill": result_update.get("clawhub_skill"),
+        "skill_gaps": skill_gaps,
+        "identity_yaml": yaml_str,
+    }
