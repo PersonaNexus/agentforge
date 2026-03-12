@@ -1039,6 +1039,11 @@ function renderForgeResults(data, jobId, salaryMin, salaryMax) {
         </div>`;
     }
 
+    // Forge another (top action bar)
+    html += `<div class="forge-top-actions">
+        <button type="button" class="forge-another-btn" onclick="forgeReset()">Forge Another</button>
+    </div>`;
+
     // Skill review & refine panel
     html += renderSkillReview(data.skill_gaps || [], jobId);
 
@@ -1077,9 +1082,9 @@ function renderForgeResults(data, jobId, salaryMin, salaryMax) {
     // Export raw data
     html += renderDownloadBar('Forge');
 
-    // Restart
-    html += `<div style="text-align:center;margin-top:1.5rem;">
-        <button type="button" class="forge-restart-btn secondary outline" onclick="forgeReset()">Forge Another</button>
+    // Restart (bottom)
+    html += `<div class="forge-bottom-actions">
+        <button type="button" class="forge-another-btn" onclick="forgeReset()">Forge Another</button>
     </div>`;
 
     results.innerHTML = html;

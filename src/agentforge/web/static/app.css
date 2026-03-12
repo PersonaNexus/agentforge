@@ -943,6 +943,31 @@
 .forge-restart-btn {
     margin-top: 1.5rem;
 }
+.forge-top-actions,
+.forge-bottom-actions {
+    text-align: center;
+    margin: 1.25rem 0;
+}
+.forge-another-btn {
+    background: var(--pico-secondary-background);
+    color: var(--pico-secondary-inverse);
+    border: 1px solid var(--pico-secondary-border);
+    border-radius: 8px;
+    padding: 0.6rem 2rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+}
+.forge-another-btn:hover {
+    filter: brightness(1.1);
+    transform: translateY(-1px);
+}
+.forge-bottom-actions {
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--pico-muted-border-color);
+}
 
 /* ========== SKILL REVIEW & REFINE ========== */
 .skill-review-panel {
