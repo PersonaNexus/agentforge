@@ -182,6 +182,15 @@
                             <input type="hidden" name="trait_overrides" id="trait-overrides-input" value="">
                         </div>
 
+                        <!-- Anonymize -->
+                        <div class="config-anonymize">
+                            <label class="config-label-inline" title="Replace company names, people, and addresses with generic equivalents. Useful for sharing skills without exposing the source organization.">
+                                <input type="checkbox" name="anonymize" value="true">
+                                Anonymize company names <span class="info-icon">&#9432;</span>
+                            </label>
+                            <small class="config-hint">Replaces company names, people, and addresses with generic equivalents (e.g. &ldquo;Mastercard&rdquo; &rarr; &ldquo;a large fintech company&rdquo;)</small>
+                        </div>
+
                         <!-- Enhance Quality -->
                         <details class="config-enhance">
                             <summary>Enhance Skill Quality <span class="info-icon" title="Providing real-world examples and frameworks dramatically improves the generated skill. Without these, the pipeline infers methodology from the JD alone &mdash; which produces generic workflows instead of expert decision-making rules.">&#9432;</span></summary>

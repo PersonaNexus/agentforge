@@ -68,12 +68,12 @@ class TestForgePipeline:
     def test_default_pipeline_stages(self):
         pipeline = ForgePipeline.default()
         names = [s.name for s in pipeline.stages]
-        assert names == ["ingest", "extract", "methodology", "map", "culture", "generate", "analyze", "team_compose"]
+        assert names == ["ingest", "anonymize", "extract", "methodology", "map", "culture", "generate", "analyze", "team_compose"]
 
     def test_quick_pipeline_stages(self):
         pipeline = ForgePipeline.quick()
         names = [s.name for s in pipeline.stages]
-        assert names == ["ingest", "extract", "methodology", "generate", "team_compose"]
+        assert names == ["ingest", "anonymize", "extract", "methodology", "generate", "team_compose"]
 
     def test_skip_stage(self):
         pipeline = ForgePipeline.default()

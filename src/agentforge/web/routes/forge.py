@@ -22,6 +22,7 @@ _ALLOWED_EXTENSIONS = {".txt", ".md", ".markdown", ".pdf", ".docx"}
 
 _STAGE_MESSAGES = {
     "ingest": "Parsing file...",
+    "anonymize": "Anonymizing company names...",
     "extract": "Extracting skills via LLM...",
     "methodology": "Extracting methodology & decision frameworks...",
     "map": "Mapping personality traits...",
@@ -48,6 +49,7 @@ def _run_forge(
     user_examples: str = "",
     user_frameworks: str = "",
     output_format: str = "claude_code",
+    anonymize: bool = False,
 ) -> None:
     """Worker thread: runs the forge pipeline and emits SSE events."""
     try:
@@ -91,6 +93,8 @@ def _run_forge(
         if user_frameworks:
             context["user_frameworks"] = user_frameworks
         context["output_format"] = output_format
+        if anonymize:
+            context["anonymize"] = True
 
         context = pipeline.run(context)
         blueprint = pipeline.to_blueprint(context)
@@ -171,6 +175,7 @@ async def start_forge(
     user_examples: str = Form(""),
     user_frameworks: str = Form(""),
     output_format: str = Form("claude_code"),
+    anonymize: str = Form(""),
 ) -> dict:
     """Start a forge pipeline job. Returns a job_id for SSE streaming."""
     filename = file.filename or "upload.txt"
@@ -219,10 +224,12 @@ async def start_forge(
     store = _get_store(request)
     job = store.create()
 
+    do_anonymize = anonymize.lower() in ("true", "1", "on", "yes")
+
     thread = threading.Thread(
         target=_run_forge,
         args=(job, file_path, mode, model, culture_path, filename, parsed_traits,
-              user_examples, user_frameworks, output_format),
+              user_examples, user_frameworks, output_format, do_anonymize),
         daemon=True,
     )
     thread.start()
@@ -347,7 +354,10 @@ async def forge_download_zip(job_id: str, request: Request) -> StreamingResponse
 async def refine_skill(job_id: str, request: Request) -> dict:
     """Refine a generated skill by merging user edits into gap areas.
 
-    Accepts a JSON body: {"edits": {"category": "user text", ...}}
+    Accepts either:
+    - JSON body: {"edits": {"category": "user text", ...}}
+    - Multipart form: edits (JSON string) + files (uploaded work samples)
+
     Merges edits into the stored extraction/methodology, regenerates
     the skill files, and returns the updated result with a fresh review.
     """
@@ -369,10 +379,35 @@ async def refine_skill(job_id: str, request: Request) -> dict:
     if not refine_ctx or not refine_ctx.get("extraction"):
         raise HTTPException(status_code=400, detail="No refinement context available")
 
-    body = await request.json()
-    edits: dict[str, str] = body.get("edits", {})
-    if not edits:
-        raise HTTPException(status_code=400, detail="No edits provided")
+    # Parse edits and files from either JSON or multipart form
+    uploaded_files: dict[str, str] = {}
+    content_type = request.headers.get("content-type", "")
+
+    if "multipart/form-data" in content_type:
+        form = await request.form()
+        edits_raw = form.get("edits", "{}")
+        try:
+            edits = json.loads(edits_raw)
+        except (json.JSONDecodeError, TypeError):
+            edits = {}
+        # Read uploaded files
+        for key in form:
+            if key == "files":
+                file_items = form.getlist("files")
+                for upload in file_items:
+                    if hasattr(upload, "read"):
+                        file_content = await upload.read()
+                        filename = getattr(upload, "filename", "file.txt") or "file.txt"
+                        try:
+                            uploaded_files[filename] = file_content.decode("utf-8")
+                        except UnicodeDecodeError:
+                            uploaded_files[filename] = file_content.decode("latin-1")
+    else:
+        body = await request.json()
+        edits = body.get("edits", {})
+
+    if not edits and not uploaded_files:
+        raise HTTPException(status_code=400, detail="No edits or files provided")
 
     # Reconstruct models from stored JSON
     extraction = ExtractionResult.model_validate(refine_ctx["extraction"])
@@ -386,6 +421,7 @@ async def refine_skill(job_id: str, request: Request) -> dict:
     refiner = SkillRefiner()
     extraction, methodology, new_files = refiner.merge(
         extraction, methodology, edits,
+        uploaded_files=uploaded_files or None,
     )
 
     # Accumulate supplementary files across refine cycles

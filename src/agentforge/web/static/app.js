@@ -782,7 +782,7 @@ document.getElementById('extract-form').addEventListener('submit', async (e) => 
 
 // ========== FORGE WIZARD ==========
 const FORGE_STAGE_LABELS = {
-    ingest: 'Parsing file', extract: 'Extracting skills', methodology: 'Extracting methodology',
+    ingest: 'Parsing file', anonymize: 'Anonymizing names', extract: 'Extracting skills', methodology: 'Extracting methodology',
     map: 'Mapping traits', culture: 'Applying culture', generate: 'Generating skill',
     analyze: 'Running gap analysis', deep_analyze: 'Running deep analysis', team_compose: 'Composing agent team'
 };
@@ -822,6 +822,13 @@ function initForgeWizard() {
             filenameEl.hidden = false;
             dropzone.classList.add('has-file');
             nextBtn.disabled = false;
+        }
+    });
+
+    // Click anywhere on the dropzone to open file picker
+    dropzone.addEventListener('click', (e) => {
+        if (e.target !== fileInput) {
+            fileInput.click();
         }
     });
 
@@ -910,9 +917,11 @@ function updateTraitOverridesInput() {
     }
 }
 
-function initForgeStages(mode) {
+function initForgeStages(mode, anonymize) {
     const container = document.getElementById('forge-stages');
-    let stages = ['ingest', 'extract', 'methodology'];
+    let stages = ['ingest'];
+    if (anonymize) stages.push('anonymize');
+    stages.push('extract', 'methodology');
     if (mode === 'default') stages.push('map', 'culture', 'generate', 'analyze', 'team_compose');
     else if (mode === 'deep') stages.push('map', 'culture', 'generate', 'deep_analyze', 'team_compose');
     else stages.push('generate', 'team_compose');
@@ -957,7 +966,8 @@ async function startForge() {
     formData.delete('salary_min');
     formData.delete('salary_max');
     const mode = formData.get('mode');
-    initForgeStages(mode);
+    const anonymize = formData.get('anonymize') === 'true';
+    initForgeStages(mode, anonymize);
 
     try {
         const resp = await fetch('/api/forge', { method: 'POST', body: formData });
@@ -1131,8 +1141,11 @@ function renderSkillReview(gaps, jobId) {
             <p class="skill-review-intro">These are optional — your skill works as-is. Adding detail here makes it more targeted.</p>
             <div id="skill-refine-status"></div>`;
 
+    const FILE_UPLOAD_CATEGORIES = ['examples', 'templates', 'frameworks'];
+
     for (const gap of gaps) {
         const saved = _gapEdits[gap.category] || '';
+        const showUpload = FILE_UPLOAD_CATEGORIES.includes(gap.category);
         html += `<div class="skill-gap-card" data-category="${esc(gap.category)}">
             <div class="skill-gap-header">
                 <span class="skill-gap-priority ${esc(gap.priority)}">${esc(gap.priority)}</span>
@@ -1142,8 +1155,19 @@ function renderSkillReview(gaps, jobId) {
             <textarea class="skill-gap-textarea"
                 data-gap-category="${esc(gap.category)}"
                 placeholder="${esc(gap.edit_prompt)}"
-                oninput="_gapEdits[this.dataset.gapCategory] = this.value">${esc(saved)}</textarea>
-        </div>`;
+                oninput="_gapEdits[this.dataset.gapCategory] = this.value">${esc(saved)}</textarea>`;
+        if (showUpload) {
+            html += `<div class="skill-gap-upload">
+                <label class="skill-gap-upload-label">
+                    <input type="file" class="skill-gap-file" data-gap-category="${esc(gap.category)}"
+                           accept=".txt,.md,.pdf,.docx" multiple>
+                    <span class="skill-gap-upload-btn">Attach files</span>
+                    <small>or upload work samples, templates, frameworks</small>
+                </label>
+                <div class="skill-gap-file-list" data-gap-category="${esc(gap.category)}"></div>
+            </div>`;
+        }
+        html += `</div>`;
     }
 
     html += `<div class="skill-refine-actions">
@@ -1152,7 +1176,25 @@ function renderSkillReview(gaps, jobId) {
         </div>
         </div>
     </details>`;
+
+    // Defer file input listener setup
+    setTimeout(() => initGapFileInputs(), 0);
+
     return html;
+}
+
+function initGapFileInputs() {
+    document.querySelectorAll('.skill-gap-file').forEach(fi => {
+        fi.addEventListener('change', () => {
+            const cat = fi.dataset.gapCategory;
+            const listEl = document.querySelector(`.skill-gap-file-list[data-gap-category="${cat}"]`);
+            if (listEl && fi.files) {
+                listEl.innerHTML = Array.from(fi.files)
+                    .map(f => `<span class="skill-gap-file-item">${esc(f.name)}</span>`)
+                    .join('');
+            }
+        });
+    });
 }
 
 async function refineSkill(jobId) {
@@ -1170,9 +1212,16 @@ async function refineSkill(jobId) {
         }
     });
 
-    if (Object.keys(edits).length === 0) {
+    // Collect attached files
+    const fileInputs = document.querySelectorAll('.skill-gap-file');
+    let hasFiles = false;
+    fileInputs.forEach(fi => {
+        if (fi.files && fi.files.length > 0) hasFiles = true;
+    });
+
+    if (Object.keys(edits).length === 0 && !hasFiles) {
         if (statusEl) {
-            statusEl.innerHTML = '<div class="skill-refine-hint-inline">Fill in at least one field above, then click Refine.</div>';
+            statusEl.innerHTML = '<div class="skill-refine-hint-inline">Fill in at least one field or attach a file, then click Refine.</div>';
             setTimeout(() => { if (statusEl) statusEl.innerHTML = ''; }, 3000);
         }
         return;
@@ -1183,11 +1232,29 @@ async function refineSkill(jobId) {
     if (statusEl) statusEl.innerHTML = '';
 
     try {
-        const resp = await fetch(`/api/forge/${jobId}/refine`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ edits }),
-        });
+        // Use FormData if files are attached, otherwise plain JSON
+        let resp;
+        if (hasFiles) {
+            const formData = new FormData();
+            formData.append('edits', JSON.stringify(edits));
+            fileInputs.forEach(fi => {
+                if (fi.files) {
+                    for (const file of fi.files) {
+                        formData.append('files', file);
+                    }
+                }
+            });
+            resp = await fetch(`/api/forge/${jobId}/refine`, {
+                method: 'POST',
+                body: formData,
+            });
+        } else {
+            resp = await fetch(`/api/forge/${jobId}/refine`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ edits }),
+            });
+        }
 
         if (!resp.ok) {
             const err = await resp.json().catch(() => ({ detail: 'Refinement failed' }));

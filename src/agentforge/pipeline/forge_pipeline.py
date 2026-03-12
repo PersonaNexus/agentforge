@@ -7,6 +7,7 @@ from typing import Any
 from agentforge.models.blueprint import AgentBlueprint
 from agentforge.pipeline.stages import (
     AnalyzeStage,
+    AnonymizeStage,
     CultureStage,
     DeepAnalyzeStage,
     ExtractStage,
@@ -65,9 +66,10 @@ class ForgePipeline:
 
     @classmethod
     def default(cls) -> "ForgePipeline":
-        """Standard pipeline: ingest -> extract -> methodology -> map -> culture -> generate -> analyze -> team."""
+        """Standard pipeline: ingest -> [anonymize] -> extract -> methodology -> map -> culture -> generate -> analyze -> team."""
         pipeline = cls()
         pipeline.add_stage(IngestStage())
+        pipeline.add_stage(AnonymizeStage())
         pipeline.add_stage(ExtractStage())
         pipeline.add_stage(MethodologyStage())
         pipeline.add_stage(MapStage())
@@ -79,9 +81,10 @@ class ForgePipeline:
 
     @classmethod
     def quick(cls) -> "ForgePipeline":
-        """Minimal pipeline: ingest -> extract -> methodology -> generate -> team."""
+        """Minimal pipeline: ingest -> [anonymize] -> extract -> methodology -> generate -> team."""
         pipeline = cls()
         pipeline.add_stage(IngestStage())
+        pipeline.add_stage(AnonymizeStage())
         pipeline.add_stage(ExtractStage())
         pipeline.add_stage(MethodologyStage())
         pipeline.add_stage(GenerateStage())
@@ -93,6 +96,7 @@ class ForgePipeline:
         """Deep analysis pipeline with per-skill scoring and priority ranking."""
         pipeline = cls()
         pipeline.add_stage(IngestStage())
+        pipeline.add_stage(AnonymizeStage())
         pipeline.add_stage(ExtractStage())
         pipeline.add_stage(MethodologyStage())
         pipeline.add_stage(MapStage())

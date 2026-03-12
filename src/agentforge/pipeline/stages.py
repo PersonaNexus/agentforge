@@ -39,6 +39,50 @@ class IngestStage(PipelineStage):
         return context
 
 
+class AnonymizeStage(PipelineStage):
+    """Anonymize company names and identifying info in the JD."""
+
+    name = "anonymize"
+
+    def run(self, context: dict[str, Any]) -> dict[str, Any]:
+        if not context.get("anonymize"):
+            return context
+
+        from agentforge.ingestion.anonymizer import anonymize_text
+
+        jd = context["jd"]
+        llm_client = context.get("llm_client")
+        if not llm_client:
+            return context
+
+        result = anonymize_text(jd.raw_text, llm_client)
+        jd.raw_text = result.anonymized_text
+
+        # Re-anonymize section content too
+        for section in jd.sections:
+            for repl in result.replacements:
+                orig = repl.get("original", "")
+                replacement = repl.get("replacement", "")
+                if orig and replacement:
+                    section.content = section.content.replace(orig, replacement)
+
+        # Anonymize company field
+        if jd.company:
+            for repl in result.replacements:
+                orig = repl.get("original", "")
+                replacement = repl.get("replacement", "")
+                if orig and replacement and orig.lower() in (jd.company or "").lower():
+                    jd.company = replacement
+                    break
+
+        context["jd"] = jd
+        context["anonymization"] = {
+            "replacements": [r for r in result.replacements],
+            "was_anonymized": True,
+        }
+        return context
+
+
 class ExtractStage(PipelineStage):
     """Extract skills and role information via LLM."""
 

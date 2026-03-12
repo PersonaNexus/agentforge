@@ -385,7 +385,7 @@ class TestCultureStage:
         pipeline = ForgePipeline.default()
         names = [s.name for s in pipeline.stages]
         assert "culture" in names
-        assert names == ["ingest", "extract", "methodology", "map", "culture", "generate", "analyze", "team_compose"]
+        assert names == ["ingest", "anonymize", "extract", "methodology", "map", "culture", "generate", "analyze", "team_compose"]
 
     def test_pipeline_with_culture_and_mocked_extraction(self, fixtures_dir):
         """Full pipeline with culture applied via mocked extraction."""
