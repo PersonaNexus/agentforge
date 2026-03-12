@@ -825,6 +825,13 @@ function initForgeWizard() {
         }
     });
 
+    // Click anywhere on the dropzone to open file picker
+    dropzone.addEventListener('click', (e) => {
+        if (e.target !== fileInput) {
+            fileInput.click();
+        }
+    });
+
     dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('drag-over'); });
     dropzone.addEventListener('dragleave', () => { dropzone.classList.remove('drag-over'); });
     dropzone.addEventListener('drop', (e) => {
