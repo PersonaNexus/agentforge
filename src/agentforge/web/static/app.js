@@ -1104,22 +1104,27 @@ window.forgeReset = function() {
 
 // ========== SKILL REVIEW & REFINE ==========
 
+// Track user edits across refine cycles so they aren't lost
+let _gapEdits = {};
+
 function renderSkillReview(gaps, jobId) {
     if (!gaps || gaps.length === 0) {
         return `<details class="skill-review-panel">
             <summary><span class="skill-review-header">Review &amp; Refine Skill</span></summary>
-            <div class="skill-review-empty">No gaps detected — your skill is well-defined!</div>
+            <div class="skill-review-empty">Looking good — no further suggestions. Your skill is ready to use.</div>
         </details>`;
     }
 
-    let html = `<details class="skill-review-panel" open>
+    let html = `<details class="skill-review-panel">
         <summary><span class="skill-review-header">Review &amp; Refine Skill
-            <span class="skill-review-count">${gaps.length} opportunity${gaps.length !== 1 ? 'ies' : 'y'}</span>
+            <span class="skill-review-count">${gaps.length}</span>
         </span></summary>
         <div class="skill-review-body">
-            <p style="font-size:0.82rem;opacity:0.65;margin:0 0 0.75rem;">Fill in any gaps below to strengthen your skill, then click Refine.</p>`;
+            <p class="skill-review-intro">These are optional — your skill works as-is. Adding detail here makes it more targeted.</p>
+            <div id="skill-refine-status"></div>`;
 
     for (const gap of gaps) {
+        const saved = _gapEdits[gap.category] || '';
         html += `<div class="skill-gap-card" data-category="${esc(gap.category)}">
             <div class="skill-gap-header">
                 <span class="skill-gap-priority ${esc(gap.priority)}">${esc(gap.priority)}</span>
@@ -1128,12 +1133,14 @@ function renderSkillReview(gaps, jobId) {
             <div class="skill-gap-description">${esc(gap.description)}</div>
             <textarea class="skill-gap-textarea"
                 data-gap-category="${esc(gap.category)}"
-                placeholder="${esc(gap.edit_prompt)}"></textarea>
+                placeholder="${esc(gap.edit_prompt)}"
+                oninput="_gapEdits[this.dataset.gapCategory] = this.value">${esc(saved)}</textarea>
         </div>`;
     }
 
     html += `<div class="skill-refine-actions">
             <button type="button" class="skill-refine-btn" onclick="refineSkill('${esc(jobId)}')">Refine Skill</button>
+            <div class="skill-refine-hint">Only fields you've filled in will be applied</div>
         </div>
         </div>
     </details>`;
@@ -1142,13 +1149,13 @@ function renderSkillReview(gaps, jobId) {
 
 async function refineSkill(jobId) {
     const btn = document.querySelector('.skill-refine-btn');
+    const statusEl = document.getElementById('skill-refine-status');
     if (!btn) return;
-    btn.setAttribute('aria-busy', 'true');
-    btn.textContent = 'Refining...';
 
-    // Collect edits from textareas
+    // Collect edits from textareas (save all to _gapEdits first)
     const edits = {};
     document.querySelectorAll('.skill-gap-textarea').forEach(ta => {
+        _gapEdits[ta.dataset.gapCategory] = ta.value;
         const val = ta.value.trim();
         if (val) {
             edits[ta.dataset.gapCategory] = val;
@@ -1156,11 +1163,16 @@ async function refineSkill(jobId) {
     });
 
     if (Object.keys(edits).length === 0) {
-        btn.removeAttribute('aria-busy');
-        btn.textContent = 'Refine Skill';
-        alert('Please fill in at least one gap to refine the skill.');
+        if (statusEl) {
+            statusEl.innerHTML = '<div class="skill-refine-hint-inline">Fill in at least one field above, then click Refine.</div>';
+            setTimeout(() => { if (statusEl) statusEl.innerHTML = ''; }, 3000);
+        }
         return;
     }
+
+    btn.setAttribute('aria-busy', 'true');
+    btn.textContent = 'Refining...';
+    if (statusEl) statusEl.innerHTML = '';
 
     try {
         const resp = await fetch(`/api/forge/${jobId}/refine`, {
@@ -1175,6 +1187,12 @@ async function refineSkill(jobId) {
         }
 
         const result = await resp.json();
+
+        // Clear edits that were successfully applied
+        const appliedCount = Object.keys(edits).length;
+        for (const cat of Object.keys(edits)) {
+            delete _gapEdits[cat];
+        }
 
         // Update skill previews
         const previewContainer = document.getElementById('skill-preview-container');
@@ -1195,15 +1213,26 @@ async function refineSkill(jobId) {
             previewContainer.innerHTML = previewHtml;
         }
 
-        // Update the review panel with remaining gaps
+        // Update the review panel with remaining gaps (preserving textarea state)
+        const remainingGaps = result.skill_gaps || [];
         const reviewPanel = document.querySelector('.skill-review-panel');
         if (reviewPanel) {
             const newReview = document.createElement('div');
-            newReview.innerHTML = renderSkillReview(result.skill_gaps || [], jobId);
+            newReview.innerHTML = renderSkillReview(remainingGaps, jobId);
             reviewPanel.replaceWith(newReview.firstElementChild);
         }
+
+        // Show success feedback
+        const newStatus = document.getElementById('skill-refine-status');
+        if (newStatus) {
+            const resolvedCount = appliedCount;
+            newStatus.innerHTML = `<div class="skill-refine-success">Applied ${resolvedCount} update${resolvedCount !== 1 ? 's' : ''} — skill regenerated.${remainingGaps.length === 0 ? ' All suggestions addressed!' : ''}</div>`;
+            setTimeout(() => { if (newStatus) newStatus.innerHTML = ''; }, 5000);
+        }
     } catch (err) {
-        alert('Refinement error: ' + err.message);
+        if (statusEl) {
+            statusEl.innerHTML = `<div class="skill-refine-error">${esc(err.message)}</div>`;
+        }
     } finally {
         btn.removeAttribute('aria-busy');
         btn.textContent = 'Refine Skill';
