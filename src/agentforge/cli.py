@@ -350,7 +350,7 @@ def forge(
         sf = context["skill_folder"]
         folder_path = safe_output_path(output_dir, sf.skill_name)
         folder_path.mkdir(exist_ok=True)
-        (folder_path / "SKILL.md").write_text(sf.skill_md)
+        (folder_path / "SKILL.md").write_text(sf.skill_md_with_references())
 
         # Write supplementary reference files
         for rel_path, content in sf.supplementary_files.items():

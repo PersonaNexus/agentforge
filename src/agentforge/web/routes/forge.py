@@ -415,7 +415,7 @@ async def refine_skill(job_id: str, request: Request) -> dict:
         )
         sf.supplementary_files = existing_files
         result_update["skill_folder"] = {
-            "skill_md": sf.skill_md,
+            "skill_md": sf.skill_md_with_references(),
             "skill_name": sf.skill_name,
             "supplementary_files": sf.supplementary_files,
         }
