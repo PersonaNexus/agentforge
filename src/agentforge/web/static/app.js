@@ -976,7 +976,7 @@ async function startForge() {
                 es.close();
                 const results = document.getElementById('forge-results');
                 results.innerHTML = `<div class="panel panel-red"><div class="panel-title">Pipeline Error</div>${esc(data.message)}</div>
-                    <button class="forge-restart-btn secondary outline" onclick="forgeReset()">Try Again</button>`;
+                    <button type="button" class="forge-restart-btn secondary outline" onclick="forgeReset()">Try Again</button>`;
                 forgeShowStep(4);
             }
         };
@@ -984,7 +984,7 @@ async function startForge() {
     } catch (err) {
         const results = document.getElementById('forge-results');
         results.innerHTML = `<div class="panel panel-red"><div class="panel-title">Error</div>${esc(err.message)}</div>
-            <button class="forge-restart-btn secondary outline" onclick="forgeReset()">Try Again</button>`;
+            <button type="button" class="forge-restart-btn secondary outline" onclick="forgeReset()">Try Again</button>`;
         forgeShowStep(4);
     }
 }
@@ -1066,9 +1066,12 @@ function renderForgeResults(data, jobId, salaryMin, salaryMax) {
     if (data.skill_scores) html += renderSkillScores(data.skill_scores);
     html += `</details>`;
 
+    // Export raw data
+    html += renderDownloadBar('Forge');
+
     // Restart
     html += `<div style="text-align:center;margin-top:1.5rem;">
-        <button class="forge-restart-btn secondary outline" onclick="forgeReset()">Forge Another</button>
+        <button type="button" class="forge-restart-btn secondary outline" onclick="forgeReset()">Forge Another</button>
     </div>`;
 
     results.innerHTML = html;
@@ -1138,8 +1141,9 @@ document.getElementById('batch-form').addEventListener('submit', async (e) => {
                 </table>
                 <p><strong>Summary:</strong> ${succeeded} succeeded, ${failed} failed, ${res.length} total</p>`;
 
-                if (Object.keys(data.files || {}).length > 0) {
-                    html += `<a href="/api/batch/${job_id}/download/zip" role="button" class="outline">Download All (ZIP)</a>`;
+                const fileCount = Object.keys(data.files || {}).length;
+                if (fileCount > 0) {
+                    html += `<a href="/api/batch/${job_id}/download/zip" role="button" class="outline">Download All ${fileCount} Skills (ZIP)</a>`;
                 }
 
                 results.innerHTML = html;
