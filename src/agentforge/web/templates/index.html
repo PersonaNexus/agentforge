@@ -69,71 +69,134 @@
 
         <!-- ===== FORGE TAB ===== -->
         <section id="tab-forge" class="tab-content" hidden>
-            <h2>Forge Agent</h2>
-            <p>Run the full pipeline: ingest, extract, map, generate, and analyze.</p>
-            <form id="forge-form">
-                <div class="grid">
-                    <label>Job Description File
-                        <input type="file" name="file" accept=".txt,.md,.pdf,.docx" required>
-                    </label>
-                    <label>Pipeline Mode
-                        <select name="mode">
-                            <option value="default" selected>Default (full pipeline)</option>
-                            <option value="quick">Quick (skip culture & analysis)</option>
-                            <option value="deep">Deep (detailed skill scoring)</option>
-                        </select>
-                    </label>
-                </div>
-                <div class="grid">
-                    <label>Model
-                        <select name="model">
-                            <optgroup label="Anthropic">
-                                <option value="claude-sonnet-4-20250514" selected>Claude Sonnet 4</option>
-                                <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
-                            </optgroup>
-                            <optgroup label="OpenAI">
-                                <option value="gpt-4o">GPT-4o</option>
-                                <option value="gpt-4o-mini">GPT-4o Mini</option>
-                            </optgroup>
-                        </select>
-                    </label>
-                    <label>Culture File (optional)
-                        <input type="file" name="culture_file" accept=".yaml,.yml">
-                    </label>
-                </div>
-                <fieldset>
-                    <legend style="font-size:0.9rem;font-weight:600;margin-bottom:0.25rem;">Skill Output</legend>
-                    <label>
-                        <input type="checkbox" name="no_skill_file">
-                        Skip full agent profile (detailed SKILL.md with analysis &amp; embedded data)
-                    </label>
-                    <small style="display:block;margin-top:0.25rem;opacity:0.7;">
-                        The Claude Code-ready skill (drag-and-drop into .claude/skills/) is always generated.
-                    </small>
-                </fieldset>
-                <details>
-                    <summary>Salary Range (optional)</summary>
-                    <div class="grid">
-                        <label>Min Annual Salary ($)
-                            <input type="number" name="salary_min" placeholder="e.g. 80000" min="0" step="1000">
-                        </label>
-                        <label>Max Annual Salary ($)
-                            <input type="number" name="salary_max" placeholder="e.g. 120000" min="0" step="1000">
-                        </label>
-                    </div>
-                    <small>Provide a salary range to see an estimated agent value. If the JD includes salary, it will be extracted automatically.</small>
-                </details>
-                <button type="submit" id="forge-btn">Forge Agent</button>
-            </form>
-            <div id="forge-progress" class="progress-area" hidden>
-                <h3>Pipeline Progress</h3>
-                <div id="forge-stages"></div>
+            <div class="forge-hero">
+                <h2>Forge a Claude Code Skill</h2>
+                <p class="forge-subtitle">Upload a job description &rarr; get a ready-to-use <code>SKILL.md</code> for Claude Code</p>
             </div>
-            <div id="forge-results" class="results-area" hidden></div>
-            <div id="forge-empty" class="empty-state">
-                <div class="empty-state-icon">&#9881;</div>
-                <div class="empty-state-title">Ready to forge</div>
-                <div class="empty-state-text">Upload a job description and select a pipeline mode to generate a complete AI agent blueprint.</div>
+
+            <!-- What you get -->
+            <div class="forge-outcome">
+                <div class="outcome-card">
+                    <div class="outcome-icon">&#128196;</div>
+                    <div class="outcome-label">SKILL.md</div>
+                    <div class="outcome-desc">Claude Code skill with YAML frontmatter, personality, competencies, and workflows</div>
+                </div>
+                <div class="outcome-arrow">&rarr;</div>
+                <div class="outcome-card">
+                    <div class="outcome-icon">&#128193;</div>
+                    <div class="outcome-label">.claude/skills/</div>
+                    <div class="outcome-desc">Drop the file in and Claude instantly gains the role's expertise</div>
+                </div>
+            </div>
+
+            <!-- Wizard steps -->
+            <div class="forge-wizard">
+                <!-- Step indicators -->
+                <div class="wizard-steps">
+                    <div class="wizard-step active" data-step="1">
+                        <span class="wizard-step-num">1</span>
+                        <span class="wizard-step-label">Upload</span>
+                    </div>
+                    <div class="wizard-step-connector"></div>
+                    <div class="wizard-step" data-step="2">
+                        <span class="wizard-step-num">2</span>
+                        <span class="wizard-step-label">Configure</span>
+                    </div>
+                    <div class="wizard-step-connector"></div>
+                    <div class="wizard-step" data-step="3">
+                        <span class="wizard-step-num">3</span>
+                        <span class="wizard-step-label">Forge</span>
+                    </div>
+                    <div class="wizard-step-connector"></div>
+                    <div class="wizard-step" data-step="4">
+                        <span class="wizard-step-num">4</span>
+                        <span class="wizard-step-label">Download</span>
+                    </div>
+                </div>
+
+                <form id="forge-form">
+                    <!-- Step 1: Upload -->
+                    <div class="wizard-panel" id="forge-step-1">
+                        <h3>Upload Job Description</h3>
+                        <p>Supported formats: .txt, .md, .pdf, .docx</p>
+                        <div class="upload-zone" id="forge-dropzone">
+                            <div class="upload-zone-icon">&#128206;</div>
+                            <div class="upload-zone-text">Drag &amp; drop a file here, or click to browse</div>
+                            <input type="file" name="file" accept=".txt,.md,.pdf,.docx" required id="forge-file-input">
+                            <div class="upload-zone-filename" id="forge-filename" hidden></div>
+                        </div>
+                        <div class="wizard-nav">
+                            <span></span>
+                            <button type="button" class="wizard-next-btn" id="forge-next-1" disabled>Next: Configure &rarr;</button>
+                        </div>
+                    </div>
+
+                    <!-- Step 2: Configure -->
+                    <div class="wizard-panel" id="forge-step-2" hidden>
+                        <h3>Configure Pipeline</h3>
+                        <div class="config-grid">
+                            <div class="config-card">
+                                <label class="config-label">Pipeline Mode</label>
+                                <select name="mode">
+                                    <option value="default" selected>Default &mdash; full analysis</option>
+                                    <option value="quick">Quick &mdash; skip culture &amp; gap analysis</option>
+                                    <option value="deep">Deep &mdash; per-skill scoring</option>
+                                </select>
+                                <small class="config-hint">Default is recommended for most use cases</small>
+                            </div>
+                            <div class="config-card">
+                                <label class="config-label">Model</label>
+                                <select name="model">
+                                    <optgroup label="Anthropic">
+                                        <option value="claude-sonnet-4-20250514" selected>Claude Sonnet 4</option>
+                                        <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+                                    </optgroup>
+                                    <optgroup label="OpenAI">
+                                        <option value="gpt-4o">GPT-4o</option>
+                                        <option value="gpt-4o-mini">GPT-4o Mini</option>
+                                    </optgroup>
+                                </select>
+                                <small class="config-hint">Claude Sonnet 4 gives the best results</small>
+                            </div>
+                        </div>
+                        <details class="config-advanced">
+                            <summary>Advanced Options</summary>
+                            <div class="config-grid">
+                                <div class="config-card">
+                                    <label class="config-label">Culture File</label>
+                                    <input type="file" name="culture_file" accept=".yaml,.yml">
+                                    <small class="config-hint">Optional YAML culture profile to shape personality</small>
+                                </div>
+                                <div class="config-card">
+                                    <label class="config-label">Salary Range</label>
+                                    <div class="salary-row">
+                                        <input type="number" name="salary_min" placeholder="Min $" min="0" step="1000">
+                                        <span class="salary-dash">&ndash;</span>
+                                        <input type="number" name="salary_max" placeholder="Max $" min="0" step="1000">
+                                    </div>
+                                    <small class="config-hint">For agent value estimation (auto-detected from JD if present)</small>
+                                </div>
+                            </div>
+                        </details>
+                        <div class="wizard-nav">
+                            <button type="button" class="wizard-back-btn" id="forge-back-2">&larr; Back</button>
+                            <button type="button" class="wizard-next-btn" id="forge-next-2">Forge It &rarr;</button>
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Progress -->
+                    <div class="wizard-panel" id="forge-step-3" hidden>
+                        <h3>Forging Your Skill...</h3>
+                        <div class="forge-progress-track">
+                            <div id="forge-stages" class="forge-stages-list"></div>
+                        </div>
+                    </div>
+
+                    <!-- Step 4: Results -->
+                    <div class="wizard-panel" id="forge-step-4" hidden>
+                        <div id="forge-results" class="results-area"></div>
+                    </div>
+                </form>
             </div>
         </section>
 

@@ -777,13 +777,67 @@ document.getElementById('extract-form').addEventListener('submit', async (e) => 
     }
 });
 
-// ========== FORGE ==========
-const FORGE_STAGES = ['ingest', 'extract', 'map', 'culture', 'generate', 'analyze', 'deep_analyze', 'team_compose'];
+// ========== FORGE WIZARD ==========
 const FORGE_STAGE_LABELS = {
-    ingest: 'Parse File', extract: 'Extract Skills', map: 'Map Traits',
-    culture: 'Apply Culture', generate: 'Generate Identity', analyze: 'Gap Analysis',
-    deep_analyze: 'Deep Analysis', team_compose: 'Compose Agent Team'
+    ingest: 'Parsing file', extract: 'Extracting skills', map: 'Mapping traits',
+    culture: 'Applying culture', generate: 'Generating skill', analyze: 'Running gap analysis',
+    deep_analyze: 'Running deep analysis', team_compose: 'Composing agent team'
 };
+
+// Wizard step navigation
+let _forgeCurrentStep = 1;
+
+function forgeShowStep(step) {
+    _forgeCurrentStep = step;
+    for (let i = 1; i <= 4; i++) {
+        const panel = document.getElementById('forge-step-' + i);
+        if (panel) panel.hidden = (i !== step);
+    }
+    // Update step indicators
+    document.querySelectorAll('.wizard-step').forEach(el => {
+        const s = parseInt(el.dataset.step);
+        el.classList.remove('active', 'done');
+        if (s === step) el.classList.add('active');
+        else if (s < step) el.classList.add('done');
+    });
+}
+
+function initForgeWizard() {
+    // Prevent default form submission (wizard handles it)
+    document.getElementById('forge-form').addEventListener('submit', (e) => e.preventDefault());
+
+    // File input -> dropzone
+    const dropzone = document.getElementById('forge-dropzone');
+    const fileInput = document.getElementById('forge-file-input');
+    const filenameEl = document.getElementById('forge-filename');
+    const nextBtn = document.getElementById('forge-next-1');
+
+    fileInput.addEventListener('change', () => {
+        if (fileInput.files.length > 0) {
+            const name = fileInput.files[0].name;
+            filenameEl.textContent = name;
+            filenameEl.hidden = false;
+            dropzone.classList.add('has-file');
+            nextBtn.disabled = false;
+        }
+    });
+
+    dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('drag-over'); });
+    dropzone.addEventListener('dragleave', () => { dropzone.classList.remove('drag-over'); });
+    dropzone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropzone.classList.remove('drag-over');
+        if (e.dataTransfer.files.length > 0) {
+            fileInput.files = e.dataTransfer.files;
+            fileInput.dispatchEvent(new Event('change'));
+        }
+    });
+
+    // Step navigation
+    nextBtn.addEventListener('click', () => forgeShowStep(2));
+    document.getElementById('forge-back-2').addEventListener('click', () => forgeShowStep(1));
+    document.getElementById('forge-next-2').addEventListener('click', () => startForge());
+}
 
 function initForgeStages(mode) {
     const container = document.getElementById('forge-stages');
@@ -793,62 +847,52 @@ function initForgeStages(mode) {
     else stages.push('generate', 'team_compose');
 
     container.innerHTML = stages.map(s =>
-        `<div class="stage-item stage-pending" id="stage-${s}">
-            <span class="stage-icon">&#9675;</span>
-            <span>${FORGE_STAGE_LABELS[s] || s}</span>
+        `<div class="forge-stage-row stage-pending" id="stage-${s}">
+            <span class="forge-stage-icon">&#9675;</span>
+            <span class="forge-stage-name">${FORGE_STAGE_LABELS[s] || s}</span>
         </div>`
     ).join('');
 }
 
 function updateForgeStage(stage) {
-    // Mark previous active as done
-    document.querySelectorAll('.stage-item.stage-active').forEach(el => {
+    document.querySelectorAll('.forge-stage-row.stage-active').forEach(el => {
         el.classList.remove('stage-active');
         el.classList.add('stage-done');
-        el.querySelector('.stage-icon').innerHTML = '&#10003;';
+        el.querySelector('.forge-stage-icon').innerHTML = '&#10003;';
     });
-    // Mark current as active
     const el = document.getElementById('stage-' + stage);
     if (el) {
         el.classList.remove('stage-pending');
         el.classList.add('stage-active');
-        el.querySelector('.stage-icon').innerHTML = '&#8635;';
+        el.querySelector('.forge-stage-icon').innerHTML = '&#8635;';
     }
 }
 
 function completeAllStages() {
-    document.querySelectorAll('.stage-item.stage-active').forEach(el => {
+    document.querySelectorAll('.forge-stage-row.stage-active').forEach(el => {
         el.classList.remove('stage-active');
         el.classList.add('stage-done');
-        el.querySelector('.stage-icon').innerHTML = '&#10003;';
+        el.querySelector('.forge-stage-icon').innerHTML = '&#10003;';
     });
 }
 
-document.getElementById('forge-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const btn = document.getElementById('forge-btn');
-    const progress = document.getElementById('forge-progress');
-    const results = document.getElementById('forge-results');
-    btn.setAttribute('aria-busy', 'true');
-    btn.disabled = true;
-    results.hidden = true;
-    hideEmptyState('forge');
+async function startForge() {
+    forgeShowStep(3);
 
-    const formData = new FormData(e.target);
+    const form = document.getElementById('forge-form');
+    const formData = new FormData(form);
     const forgeSalaryMin = parseFloat(formData.get('salary_min')) || null;
     const forgeSalaryMax = parseFloat(formData.get('salary_max')) || null;
     formData.delete('salary_min');
     formData.delete('salary_max');
     const mode = formData.get('mode');
     initForgeStages(mode);
-    progress.hidden = false;
 
     try {
         const resp = await fetch('/api/forge', { method: 'POST', body: formData });
         const { job_id } = await resp.json();
         if (!resp.ok) throw new Error('Failed to start forge job');
 
-        // Connect SSE
         const es = new EventSource(`/api/forge/${job_id}/stream`);
         es.onmessage = (evt) => {
             const data = JSON.parse(evt.data);
@@ -858,74 +902,104 @@ document.getElementById('forge-form').addEventListener('submit', async (e) => {
                 completeAllStages();
                 es.close();
                 _lastForgeResult = data;
-                const bp = data.blueprint;
-                let html = renderDownloadBar('Forge');
-                // Use server-provided agent team if available, otherwise client-side
-                const forgeTeam = data.agent_team || composeAgentTeam(bp.extraction);
-                html += renderRolePanel(bp.extraction.role);
-                html += renderAgentTeam(forgeTeam);
-                html += renderSkillsTable(bp.extraction.skills);
-                html += renderHumanElements(bp.extraction.skills, bp.extraction.responsibilities);
-                html += renderSuggestedTraits(bp.extraction.suggested_traits);
-                html += renderAutomation(bp.extraction.automation_potential, bp.extraction.automation_rationale);
-                const forgeValue = computeAgentValue(bp.extraction, forgeSalaryMin, forgeSalaryMax);
-                html += renderAgentValue(forgeValue);
-                if (data.traits) html += renderTraitBars(data.traits);
-                html += renderGapAnalysis(data.coverage_score, data.coverage_gaps);
-                if (data.skill_scores) html += renderSkillScores(data.skill_scores);
-
-                // Output file downloads with guidance
-                html += `<div class="download-section" style="margin-top:1.5rem;">
-                    <h4 style="margin-bottom:0.5rem;">Downloads</h4>
-                    <div class="download-row" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:start;">
-                        <div class="download-item">
-                            <a href="/api/forge/${job_id}/download/yaml" role="button" class="outline">Identity YAML</a>
-                            <small class="download-hint">PersonaNexus agent config</small>
-                        </div>
-                        ${data.skill_folder ? `<div class="download-item">
-                            <a href="/api/forge/${job_id}/download/skill-folder" role="button" class="outline contrast">Claude Code Skill (ZIP)</a>
-                            <small class="download-hint">Drop into .claude/skills/ &mdash; ready to use</small>
-                        </div>` : ''}
-                        ${data.skill_file ? `<div class="download-item">
-                            <a href="/api/forge/${job_id}/download/skill" role="button" class="outline secondary">Full Agent Profile</a>
-                            <small class="download-hint">Detailed SKILL.md with analysis &amp; embedded data</small>
-                        </div>` : ''}
-                    </div>
-                </div>`;
-
-                // Blueprint summary
-                html += `<div class="panel panel-green">
-                    <div class="panel-title">Agent Forged Successfully</div>
-                    <strong>${esc(bp.extraction.role.title)}</strong> &mdash;
-                    Skills: ${bp.extraction.skills.length} |
-                    Coverage: ${Math.round(bp.coverage_score * 100)}% |
-                    Automation: ${Math.round(bp.automation_estimate * 100)}%
-                </div>`;
-
-                results.innerHTML = html;
-                results.hidden = false;
-                btn.removeAttribute('aria-busy');
-                btn.disabled = false;
+                renderForgeResults(data, job_id, forgeSalaryMin, forgeSalaryMax);
+                forgeShowStep(4);
             } else if (data.event === 'error') {
                 es.close();
-                results.innerHTML = `<div class="panel panel-red"><div class="panel-title">Pipeline Error</div>${esc(data.message)}</div>`;
-                results.hidden = false;
-                btn.removeAttribute('aria-busy');
-                btn.disabled = false;
+                const results = document.getElementById('forge-results');
+                results.innerHTML = `<div class="panel panel-red"><div class="panel-title">Pipeline Error</div>${esc(data.message)}</div>
+                    <button class="forge-restart-btn secondary outline" onclick="forgeReset()">Try Again</button>`;
+                forgeShowStep(4);
             }
         };
-        es.onerror = () => {
-            es.close();
-            btn.removeAttribute('aria-busy');
-            btn.disabled = false;
-        };
+        es.onerror = () => { es.close(); };
     } catch (err) {
-        results.innerHTML = `<div class="panel panel-red"><div class="panel-title">Error</div>${esc(err.message)}</div>`;
-        results.hidden = false;
-        btn.removeAttribute('aria-busy');
-        btn.disabled = false;
+        const results = document.getElementById('forge-results');
+        results.innerHTML = `<div class="panel panel-red"><div class="panel-title">Error</div>${esc(err.message)}</div>
+            <button class="forge-restart-btn secondary outline" onclick="forgeReset()">Try Again</button>`;
+        forgeShowStep(4);
     }
-});
+}
+
+function renderForgeResults(data, jobId, salaryMin, salaryMax) {
+    const bp = data.blueprint;
+    const results = document.getElementById('forge-results');
+    const skillName = data.skill_folder ? data.skill_folder.skill_name : 'skill';
+    const skillMd = data.skill_folder ? data.skill_folder.skill_md : '';
+
+    let html = '';
+
+    // Success hero
+    html += `<div class="forge-success-hero">
+        <div class="forge-success-icon">&#10003;</div>
+        <div class="forge-success-title">${esc(bp.extraction.role.title)}</div>
+        <div class="forge-success-subtitle">Your Claude Code skill <code>${esc(skillName)}</code> is ready</div>
+    </div>`;
+
+    // Stats bar
+    html += `<div class="forge-stats">
+        <div class="forge-stat">
+            <span class="forge-stat-value">${bp.extraction.skills.length}</span>
+            <span class="forge-stat-label">Skills</span>
+        </div>
+        <div class="forge-stat">
+            <span class="forge-stat-value">${data.coverage_score != null ? Math.round(data.coverage_score * 100) + '%' : '-'}</span>
+            <span class="forge-stat-label">Coverage</span>
+        </div>
+        <div class="forge-stat">
+            <span class="forge-stat-value">${Math.round(bp.automation_estimate * 100)}%</span>
+            <span class="forge-stat-label">Automation</span>
+        </div>
+    </div>`;
+
+    // Primary download
+    html += `<div class="forge-download-hero">
+        <a href="/api/forge/${jobId}/download/skill" role="button">Download SKILL.md</a>
+        <div class="forge-download-hint">Save to <code>.claude/skills/${esc(skillName)}/SKILL.md</code></div>
+    </div>`;
+
+    // Skill preview
+    if (skillMd) {
+        html += `<details class="forge-skill-preview">
+            <summary>Preview SKILL.md</summary>
+            <pre>${esc(skillMd)}</pre>
+        </details>`;
+    }
+
+    // Detailed analysis (collapsible)
+    html += `<details style="margin-top:1rem;"><summary style="font-weight:600;">Detailed Analysis</summary>`;
+    html += renderRolePanel(bp.extraction.role);
+    const forgeTeam = data.agent_team || composeAgentTeam(bp.extraction);
+    html += renderAgentTeam(forgeTeam);
+    html += renderSkillsTable(bp.extraction.skills);
+    html += renderHumanElements(bp.extraction.skills, bp.extraction.responsibilities);
+    html += renderSuggestedTraits(bp.extraction.suggested_traits);
+    html += renderAutomation(bp.extraction.automation_potential, bp.extraction.automation_rationale);
+    const forgeValue = computeAgentValue(bp.extraction, salaryMin, salaryMax);
+    html += renderAgentValue(forgeValue);
+    if (data.traits) html += renderTraitBars(data.traits);
+    html += renderGapAnalysis(data.coverage_score, data.coverage_gaps);
+    if (data.skill_scores) html += renderSkillScores(data.skill_scores);
+    html += `</details>`;
+
+    // Restart
+    html += `<div style="text-align:center;margin-top:1.5rem;">
+        <button class="forge-restart-btn secondary outline" onclick="forgeReset()">Forge Another</button>
+    </div>`;
+
+    results.innerHTML = html;
+}
+
+window.forgeReset = function() {
+    _lastForgeResult = null;
+    document.getElementById('forge-form').reset();
+    document.getElementById('forge-filename').hidden = true;
+    document.getElementById('forge-dropzone').classList.remove('has-file');
+    document.getElementById('forge-next-1').disabled = true;
+    document.getElementById('forge-results').innerHTML = '';
+    document.getElementById('forge-stages').innerHTML = '';
+    forgeShowStep(1);
+};
 
 // ========== BATCH ==========
 document.getElementById('batch-form').addEventListener('submit', async (e) => {
@@ -1127,4 +1201,5 @@ document.addEventListener('DOMContentLoaded', () => {
     showTab(hash);
     loadCultureTemplates();
     loadSettings();
+    initForgeWizard();
 });

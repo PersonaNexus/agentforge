@@ -529,6 +529,371 @@
     color: var(--af-cyan);
 }
 
+/* ========== FORGE WIZARD ========== */
+.forge-hero {
+    text-align: center;
+    margin-bottom: 1rem;
+}
+.forge-hero h2 {
+    margin-bottom: 0.25rem;
+}
+.forge-subtitle {
+    opacity: 0.7;
+    font-size: 1rem;
+    margin-bottom: 0;
+}
+.forge-subtitle code {
+    background: color-mix(in srgb, var(--af-cyan) 15%, transparent);
+    color: var(--af-cyan);
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    font-weight: 600;
+}
+
+/* Outcome preview cards */
+.forge-outcome {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    margin: 1.5rem 0 2rem;
+}
+.outcome-card {
+    border: 2px solid var(--pico-muted-border-color);
+    border-radius: 12px;
+    padding: 1rem 1.25rem;
+    text-align: center;
+    max-width: 220px;
+    flex: 1;
+    background: var(--pico-card-background-color);
+}
+.outcome-icon {
+    font-size: 2rem;
+    margin-bottom: 0.35rem;
+}
+.outcome-label {
+    font-weight: 700;
+    font-size: 0.95rem;
+    font-family: var(--pico-font-family-monospace);
+    margin-bottom: 0.25rem;
+}
+.outcome-desc {
+    font-size: 0.8rem;
+    opacity: 0.65;
+    line-height: 1.35;
+}
+.outcome-arrow {
+    font-size: 1.5rem;
+    opacity: 0.4;
+    flex-shrink: 0;
+}
+
+/* Step indicators */
+.wizard-steps {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    margin-bottom: 2rem;
+}
+.wizard-step {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    opacity: 0.35;
+    transition: opacity 0.3s, transform 0.3s;
+}
+.wizard-step.active {
+    opacity: 1;
+}
+.wizard-step.done {
+    opacity: 0.65;
+}
+.wizard-step-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    border: 2px solid currentColor;
+    font-weight: 700;
+    font-size: 0.85rem;
+    transition: background 0.3s, color 0.3s, border-color 0.3s;
+}
+.wizard-step.active .wizard-step-num {
+    background: var(--af-blue);
+    color: var(--af-text-on-color);
+    border-color: var(--af-blue);
+}
+.wizard-step.done .wizard-step-num {
+    background: var(--af-green);
+    color: var(--af-text-on-color);
+    border-color: var(--af-green);
+}
+.wizard-step-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+.wizard-step-connector {
+    width: 2.5rem;
+    height: 2px;
+    background: var(--pico-muted-border-color);
+    margin: 0 0.25rem;
+}
+
+/* Wizard panels */
+.wizard-panel {
+    animation: slideReveal 0.3s ease-out;
+}
+.wizard-panel h3 {
+    margin-bottom: 0.5rem;
+}
+
+/* Upload zone */
+.upload-zone {
+    border: 2px dashed var(--pico-muted-border-color);
+    border-radius: 12px;
+    padding: 2.5rem 1.5rem;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    position: relative;
+}
+.upload-zone:hover,
+.upload-zone.drag-over {
+    border-color: var(--af-blue);
+    background: color-mix(in srgb, var(--af-blue) 5%, transparent);
+}
+.upload-zone.has-file {
+    border-color: var(--af-green);
+    border-style: solid;
+    background: color-mix(in srgb, var(--af-green) 5%, transparent);
+}
+.upload-zone input[type="file"] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+.upload-zone-icon {
+    font-size: 2.5rem;
+    margin-bottom: 0.5rem;
+}
+.upload-zone.has-file .upload-zone-icon::after {
+    content: " \2713";
+    color: var(--af-green);
+}
+.upload-zone-text {
+    font-size: 0.9rem;
+    opacity: 0.6;
+}
+.upload-zone-filename {
+    font-weight: 600;
+    font-size: 1rem;
+    margin-top: 0.5rem;
+    color: var(--af-green);
+}
+
+/* Config grid */
+.config-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+.config-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+.config-card select,
+.config-card input[type="file"],
+.config-card input[type="number"] {
+    margin-bottom: 0;
+}
+.config-label {
+    font-weight: 600;
+    font-size: 0.85rem;
+    margin-bottom: 0.15rem;
+}
+.config-hint {
+    font-size: 0.75rem;
+    opacity: 0.55;
+}
+.config-advanced {
+    margin-top: 0.5rem;
+    margin-bottom: 1rem;
+}
+.salary-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.salary-row input {
+    flex: 1;
+    margin-bottom: 0;
+}
+.salary-dash {
+    opacity: 0.4;
+    font-weight: 600;
+}
+
+/* Wizard navigation */
+.wizard-nav {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 1.5rem;
+}
+.wizard-next-btn,
+.wizard-back-btn {
+    cursor: pointer;
+}
+.wizard-next-btn {
+    font-weight: 600;
+}
+.wizard-next-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* Forge progress track */
+.forge-progress-track {
+    margin: 1.5rem 0;
+}
+.forge-stages-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+.forge-stage-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 0.75rem;
+    border-radius: 8px;
+    transition: background 0.2s;
+}
+.forge-stage-row.stage-active {
+    background: color-mix(in srgb, var(--af-blue) 8%, transparent);
+}
+.forge-stage-row.stage-done {
+    opacity: 0.6;
+}
+.forge-stage-icon {
+    width: 1.5rem;
+    text-align: center;
+    font-size: 1rem;
+    flex-shrink: 0;
+}
+.forge-stage-row.stage-pending .forge-stage-icon {
+    opacity: 0.25;
+}
+.forge-stage-row.stage-active .forge-stage-icon {
+    color: var(--af-blue);
+    animation: spin 1s linear infinite;
+}
+.forge-stage-row.stage-done .forge-stage-icon {
+    color: var(--af-green);
+}
+.forge-stage-name {
+    font-weight: 500;
+    font-size: 0.9rem;
+    flex: 1;
+}
+.forge-stage-msg {
+    font-size: 0.8rem;
+    opacity: 0.5;
+}
+
+/* Results: success hero */
+.forge-success-hero {
+    text-align: center;
+    padding: 2rem 1rem;
+    margin-bottom: 1.5rem;
+    border: 2px solid var(--af-green);
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--af-green) 5%, transparent);
+}
+.forge-success-icon {
+    font-size: 3rem;
+    margin-bottom: 0.5rem;
+}
+.forge-success-title {
+    font-size: 1.35rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+}
+.forge-success-subtitle {
+    font-size: 0.9rem;
+    opacity: 0.65;
+}
+.forge-success-subtitle code {
+    background: color-mix(in srgb, var(--af-green) 15%, transparent);
+    color: var(--af-green-dark);
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    font-weight: 600;
+}
+.forge-download-hero {
+    margin: 1.5rem auto;
+    text-align: center;
+}
+.forge-download-hero a[role="button"] {
+    font-size: 1.1rem;
+    padding: 0.75rem 2rem;
+}
+.forge-download-hint {
+    font-size: 0.8rem;
+    opacity: 0.55;
+    margin-top: 0.5rem;
+}
+.forge-skill-preview {
+    margin: 1.5rem 0;
+    border: 1px solid var(--pico-muted-border-color);
+    border-radius: 8px;
+    overflow: hidden;
+}
+.forge-skill-preview summary {
+    padding: 0.75rem 1rem;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+.forge-skill-preview pre {
+    margin: 0;
+    padding: 1rem;
+    max-height: 400px;
+    overflow-y: auto;
+    font-size: 0.8rem;
+    border-top: 1px solid var(--pico-muted-border-color);
+}
+.forge-stats {
+    display: flex;
+    gap: 1.5rem;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin: 1rem 0;
+}
+.forge-stat {
+    text-align: center;
+}
+.forge-stat-value {
+    display: block;
+    font-size: 1.5rem;
+    font-weight: 800;
+}
+.forge-stat-label {
+    font-size: 0.75rem;
+    opacity: 0.55;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.forge-restart-btn {
+    margin-top: 1.5rem;
+}
+
 /* ========== RESPONSIVE ========== */
 @media (max-width: 768px) {
     /* Stack trait bars vertically */
@@ -567,6 +932,23 @@
     /* Card grid single column */
     .card-grid, .team-grid {
         grid-template-columns: 1fr;
+    }
+
+    /* Forge wizard responsive */
+    .forge-outcome {
+        flex-direction: column;
+    }
+    .outcome-arrow {
+        transform: rotate(90deg);
+    }
+    .config-grid {
+        grid-template-columns: 1fr;
+    }
+    .wizard-step-label {
+        display: none;
+    }
+    .forge-stats {
+        gap: 1rem;
     }
 
     /* Empty state tighter */

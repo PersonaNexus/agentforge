@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import io
 import json
+import re
 import tempfile
 import threading
-import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -41,11 +40,9 @@ def _run_forge(
     mode: str,
     model: str,
     culture_path: Path | None,
-    no_skill_file: bool,
 ) -> None:
     """Worker thread: runs the forge pipeline and emits SSE events."""
     try:
-        from agentforge.cli import _ingest_file
         from agentforge.llm.client import LLMClient
         from agentforge.pipeline.forge_pipeline import ForgePipeline
 
@@ -84,28 +81,24 @@ def _run_forge(
         blueprint = pipeline.to_blueprint(context)
 
         # Build result
+        sf = context.get("skill_folder")
         result: dict[str, Any] = {
             "blueprint": json.loads(blueprint.model_dump_json()),
             "identity_yaml": context.get("identity_yaml", ""),
-            "skill_file": context.get("skill_file", "") if not no_skill_file else "",
             "traits": context.get("traits"),
             "coverage_score": context.get("coverage_score"),
             "coverage_gaps": context.get("coverage_gaps"),
             "skill_scores": context.get("skill_scores"),
+            "skill_folder": {
+                "skill_md": sf.skill_md,
+                "skill_name": sf.skill_name,
+            } if sf else None,
         }
 
         # Include agent team composition
         agent_team = context.get("agent_team")
         if agent_team:
             result["agent_team"] = agent_team.to_dict()
-
-        # Include skill folder data for download
-        if not no_skill_file and "skill_folder" in context:
-            sf = context["skill_folder"]
-            result["skill_folder"] = {
-                "skill_md": sf.skill_md,
-                "skill_name": sf.skill_name,
-            }
 
         job.emit_done(result)
 
@@ -123,7 +116,6 @@ async def start_forge(
     file: UploadFile = File(...),
     mode: str = Form("default"),
     model: str = Form("claude-sonnet-4-20250514"),
-    no_skill_file: bool = Form(False),
     culture_file: UploadFile | None = File(None),
 ) -> dict:
     """Start a forge pipeline job. Returns a job_id for SSE streaming."""
@@ -157,7 +149,7 @@ async def start_forge(
 
     thread = threading.Thread(
         target=_run_forge,
-        args=(job, file_path, mode, model, culture_path, no_skill_file),
+        args=(job, file_path, mode, model, culture_path),
         daemon=True,
     )
     thread.start()
@@ -205,28 +197,13 @@ async def forge_download(job_id: str, file_type: str, request: Request):
         filename = "agent_identity.yaml"
         media_type = "text/yaml"
     elif file_type == "skill":
-        content = job.result.get("skill_file", "")
-        filename = "SKILL.md"
-        media_type = "text/markdown"
-    elif file_type == "skill-folder":
         sf_data = job.result.get("skill_folder")
         if not sf_data:
-            raise HTTPException(status_code=404, detail="No skill folder available")
-
-        buffer = io.BytesIO()
-        skill_name = sf_data["skill_name"]
-        # Sanitize skill_name: strip path separators and header-injection chars
-        import re
-        safe_name = re.sub(r'[^\w\-.]', '_', skill_name)[:100] or "skill"
-        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr(f"{safe_name}/SKILL.md", sf_data["skill_md"])
-        buffer.seek(0)
-
-        return StreamingResponse(
-            buffer,
-            media_type="application/zip",
-            headers={"Content-Disposition": f'attachment; filename="{safe_name}_skill.zip"'},
-        )
+            raise HTTPException(status_code=404, detail="No skill available")
+        content = sf_data["skill_md"]
+        safe_name = re.sub(r'[^\w\-.]', '_', sf_data["skill_name"])[:100] or "skill"
+        filename = f"{safe_name}_SKILL.md"
+        media_type = "text/markdown"
     else:
         raise HTTPException(status_code=400, detail="Invalid file type")
 
