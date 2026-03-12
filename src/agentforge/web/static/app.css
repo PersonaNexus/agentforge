@@ -933,6 +933,108 @@
     margin-top: 1.5rem;
 }
 
+/* ========== SKILL REVIEW & REFINE ========== */
+.skill-review-panel {
+    margin: 1.5rem 0;
+    border: 1px solid var(--pico-muted-border-color);
+    border-radius: 12px;
+    overflow: hidden;
+}
+.skill-review-panel summary {
+    padding: 0.75rem 1rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+.skill-review-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.skill-review-count {
+    background: var(--pico-primary);
+    color: #fff;
+    border-radius: 10px;
+    padding: 0.1rem 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+.skill-review-body {
+    padding: 0 1rem 1rem;
+}
+.skill-gap-card {
+    border: 1px solid var(--pico-muted-border-color);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 0.75rem;
+}
+.skill-gap-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.4rem;
+}
+.skill-gap-priority {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+}
+.skill-gap-priority.high {
+    background: #fee2e2;
+    color: #991b1b;
+}
+.skill-gap-priority.medium {
+    background: #fef3c7;
+    color: #92400e;
+}
+.skill-gap-priority.low {
+    background: #e0e7ff;
+    color: #3730a3;
+}
+.skill-gap-title {
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+.skill-gap-description {
+    font-size: 0.8rem;
+    opacity: 0.7;
+    margin-bottom: 0.5rem;
+}
+.skill-gap-textarea {
+    width: 100%;
+    min-height: 80px;
+    font-size: 0.8rem;
+    border: 1px solid var(--pico-muted-border-color);
+    border-radius: 6px;
+    padding: 0.5rem;
+    resize: vertical;
+    font-family: inherit;
+}
+.skill-gap-textarea::placeholder {
+    font-size: 0.78rem;
+    opacity: 0.5;
+}
+.skill-refine-actions {
+    text-align: center;
+    margin-top: 0.75rem;
+}
+.skill-refine-btn {
+    font-size: 0.9rem;
+    padding: 0.5rem 1.5rem;
+}
+.skill-refine-btn[aria-busy="true"] {
+    pointer-events: none;
+    opacity: 0.7;
+}
+.skill-review-empty {
+    text-align: center;
+    padding: 1rem;
+    font-size: 0.85rem;
+    opacity: 0.6;
+}
+
 /* ========== PERSONALITY SLIDERS ========== */
 .personality-section {
     margin: 1.5rem 0 1rem;
