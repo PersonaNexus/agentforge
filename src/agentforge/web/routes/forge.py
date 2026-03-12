@@ -267,46 +267,6 @@ async def forge_stream(job_id: str, request: Request) -> StreamingResponse:
     return StreamingResponse(_generate(), media_type="text/event-stream")
 
 
-@router.get("/forge/{job_id}/download/{file_type}")
-async def forge_download(job_id: str, file_type: str, request: Request):
-    """Download a generated file from a completed forge job."""
-    store = _get_store(request)
-    job = store.get(job_id)
-    if not job or not job.result:
-        raise HTTPException(status_code=404, detail="Job not found or not complete")
-
-    if file_type == "yaml":
-        content = job.result.get("identity_yaml", "")
-        filename = "agent_identity.yaml"
-        media_type = "text/yaml"
-    elif file_type == "skill":
-        sf_data = job.result.get("skill_folder")
-        if not sf_data:
-            raise HTTPException(status_code=404, detail="No skill available")
-        content = sf_data["skill_md"]
-        source = job.result.get("source_filename", "")
-        safe_name = source or safe_filename(sf_data["skill_name"])[:100] or "skill"
-        filename = f"{safe_name}_SKILL.md"
-        media_type = "text/markdown"
-    elif file_type == "clawhub":
-        ch_data = job.result.get("clawhub_skill")
-        if not ch_data:
-            raise HTTPException(status_code=404, detail="No ClawHub skill available")
-        content = ch_data["skill_md"]
-        source = job.result.get("source_filename", "")
-        safe_name = source or safe_filename(ch_data["skill_name"])[:100] or "skill"
-        filename = f"{safe_name}_clawhub_SKILL.md"
-        media_type = "text/markdown"
-    else:
-        raise HTTPException(status_code=400, detail="Invalid file type")
-
-    return PlainTextResponse(
-        content=content,
-        media_type=media_type,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
-
-
 @router.get("/forge/{job_id}/download/zip")
 async def forge_download_zip(job_id: str, request: Request) -> StreamingResponse:
     """Download the skill folder as a ZIP with SKILL.md + reference files."""
@@ -353,6 +313,46 @@ async def forge_download_zip(job_id: str, request: Request) -> StreamingResponse
     )
 
 
+@router.get("/forge/{job_id}/download/{file_type}")
+async def forge_download(job_id: str, file_type: str, request: Request):
+    """Download a generated file from a completed forge job."""
+    store = _get_store(request)
+    job = store.get(job_id)
+    if not job or not job.result:
+        raise HTTPException(status_code=404, detail="Job not found or not complete")
+
+    if file_type == "yaml":
+        content = job.result.get("identity_yaml", "")
+        filename = "agent_identity.yaml"
+        media_type = "text/yaml"
+    elif file_type == "skill":
+        sf_data = job.result.get("skill_folder")
+        if not sf_data:
+            raise HTTPException(status_code=404, detail="No skill available")
+        content = sf_data["skill_md"]
+        source = job.result.get("source_filename", "")
+        safe_name = source or safe_filename(sf_data["skill_name"])[:100] or "skill"
+        filename = f"{safe_name}_SKILL.md"
+        media_type = "text/markdown"
+    elif file_type == "clawhub":
+        ch_data = job.result.get("clawhub_skill")
+        if not ch_data:
+            raise HTTPException(status_code=404, detail="No ClawHub skill available")
+        content = ch_data["skill_md"]
+        source = job.result.get("source_filename", "")
+        safe_name = source or safe_filename(ch_data["skill_name"])[:100] or "skill"
+        filename = f"{safe_name}_clawhub_SKILL.md"
+        media_type = "text/markdown"
+    else:
+        raise HTTPException(status_code=400, detail="Invalid file type")
+
+    return PlainTextResponse(
+        content=content,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.post("/forge/{job_id}/refine")
 async def refine_skill(job_id: str, request: Request) -> dict:
     """Refine a generated skill by merging user edits into gap areas.
@@ -384,6 +384,7 @@ async def refine_skill(job_id: str, request: Request) -> dict:
 
     # Parse edits and files from either JSON or multipart form
     uploaded_files: dict[str, str] = {}
+    file_categories: list[str] = []
     content_type = request.headers.get("content-type", "")
 
     if "multipart/form-data" in content_type:
@@ -393,6 +394,14 @@ async def refine_skill(job_id: str, request: Request) -> dict:
             edits = json.loads(edits_raw)
         except (json.JSONDecodeError, TypeError):
             edits = {}
+        # Parse file categories (which gap categories have file attachments)
+        file_cats_raw = form.get("file_categories", "[]")
+        try:
+            file_categories = json.loads(file_cats_raw)
+            if not isinstance(file_categories, list):
+                file_categories = []
+        except (json.JSONDecodeError, TypeError):
+            file_categories = []
         # Read uploaded files
         for key in form:
             if key == "files":
@@ -427,8 +436,13 @@ async def refine_skill(job_id: str, request: Request) -> dict:
         uploaded_files=uploaded_files or None,
     )
 
-    # Accumulate supplementary files across refine cycles
-    existing_files: dict[str, str] = refine_ctx.get("supplementary_files", {})
+    # Accumulate supplementary files across refine cycles.  Seed from the
+    # skill folder's files on the first refine (they come from the pipeline).
+    existing_files: dict[str, str] = dict(refine_ctx.get("supplementary_files", {}))
+    if not existing_files:
+        sf_data = job.result.get("skill_folder")
+        if sf_data:
+            existing_files.update(sf_data.get("supplementary_files", {}))
     existing_files.update(new_files)
 
     # Regenerate identity + skill files with enriched data
@@ -471,13 +485,26 @@ async def refine_skill(job_id: str, request: Request) -> dict:
             "skill_name": ch.skill_name,
         }
 
-    # Re-run skill quality review
+    # Re-run skill quality review — suppress gaps for categories with
+    # file uploads or text edits so the same gap doesn't keep reappearing.
+    has_examples = (
+        bool(user_examples)
+        or "examples" in edits
+        or "examples" in file_categories
+        or bool(existing_files.get("references/work-examples.md"))
+    )
+    has_frameworks = (
+        bool(user_frameworks)
+        or "frameworks" in edits
+        or "frameworks" in file_categories
+        or bool(existing_files.get("references/frameworks.md"))
+    )
     reviewer = SkillReviewer()
     skill_gaps = reviewer.review_to_dict(
         extraction,
         methodology=methodology,
-        has_examples=bool(user_examples) or "examples" in edits,
-        has_frameworks=bool(user_frameworks) or "frameworks" in edits,
+        has_examples=has_examples,
+        has_frameworks=has_frameworks,
     )
     result_update["skill_gaps"] = skill_gaps
 

@@ -1212,11 +1212,18 @@ async function refineSkill(jobId) {
         }
     });
 
-    // Collect attached files
+    // Collect attached files and track which gap categories have files
     const fileInputs = document.querySelectorAll('.skill-gap-file');
     let hasFiles = false;
+    const fileCategories = [];
     fileInputs.forEach(fi => {
-        if (fi.files && fi.files.length > 0) hasFiles = true;
+        if (fi.files && fi.files.length > 0) {
+            hasFiles = true;
+            const cat = fi.dataset.gapCategory;
+            if (cat && !fileCategories.includes(cat)) {
+                fileCategories.push(cat);
+            }
+        }
     });
 
     if (Object.keys(edits).length === 0 && !hasFiles) {
@@ -1237,6 +1244,7 @@ async function refineSkill(jobId) {
         if (hasFiles) {
             const formData = new FormData();
             formData.append('edits', JSON.stringify(edits));
+            formData.append('file_categories', JSON.stringify(fileCategories));
             fileInputs.forEach(fi => {
                 if (fi.files) {
                     for (const file of fi.files) {
