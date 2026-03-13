@@ -6,8 +6,10 @@ import json
 import tempfile
 from pathlib import Path
 
+import logging
+
 import yaml
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 
 router = APIRouter(tags=["culture"])
 
@@ -33,6 +35,7 @@ async def culture_list() -> list[dict]:
 
 @router.post("/culture/parse")
 async def culture_parse(
+    request: Request,
     file: UploadFile = File(...),
     model: str = Form("claude-sonnet-4-20250514"),
 ) -> dict:
@@ -56,7 +59,26 @@ async def culture_parse(
             parser = CultureParser(llm_client=client)
             profile = parser.parse_file(tmp_path)
 
-        return json.loads(profile.model_dump_json())
+        result = json.loads(profile.model_dump_json())
+
+        # Persist culture profile to DB
+        sf = getattr(request.app.state, "db_session_factory", None)
+        if sf:
+            try:
+                from agentforge.web.db.repository import CultureRepository
+
+                with sf() as session:
+                    repo = CultureRepository(session)
+                    repo.save(
+                        name=profile.name,
+                        description=profile.description,
+                        profile_json=result,
+                        source_file=file.filename,
+                    )
+            except Exception:
+                logging.getLogger(__name__).exception("Failed to persist culture profile")
+
+        return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     finally:

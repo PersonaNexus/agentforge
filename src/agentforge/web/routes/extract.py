@@ -6,7 +6,9 @@ import json
 import tempfile
 from pathlib import Path
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+import logging
+
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 
 router = APIRouter(tags=["extract"])
 
@@ -15,6 +17,7 @@ _ALLOWED_EXTENSIONS = {".txt", ".md", ".markdown", ".pdf", ".docx"}
 
 @router.post("/extract")
 async def extract(
+    request: Request,
     file: UploadFile = File(...),
     model: str = Form("claude-sonnet-4-20250514"),
 ) -> dict:
@@ -57,6 +60,24 @@ async def extract(
         response["coverage_score"] = coverage_score
         response["coverage_gaps"] = coverage_gaps
         response["mapped_traits"] = mapped_traits
+
+        # Persist extraction to DB
+        sf = getattr(request.app.state, "db_session_factory", None)
+        if sf:
+            try:
+                from agentforge.web.db.repository import ExtractionRepository
+
+                with sf() as session:
+                    repo = ExtractionRepository(session)
+                    repo.save(
+                        role_title=result.role.title,
+                        domain=result.role.domain,
+                        extraction_json=response,
+                        coverage_score=coverage_score,
+                    )
+            except Exception:
+                logging.getLogger(__name__).exception("Failed to persist extraction")
+
         return response
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

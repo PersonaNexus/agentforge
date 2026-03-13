@@ -21,6 +21,11 @@ htmlcov/
 # OS
 .DS_Store
 
+# Database
+*.db
+*.db-shm
+*.db-wal
+
 # Claude Code
 .claude/*
 !.claude/hooks/

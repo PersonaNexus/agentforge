@@ -40,6 +40,36 @@ def _get_store(request: Request) -> JobStore:
     return request.app.state.jobs
 
 
+def _save_identity(
+    request: Request,
+    name: str,
+    identity_yaml: str,
+    source: str = "forge",
+    job_id: str | None = None,
+    extraction_json: dict | None = None,
+    methodology_json: dict | None = None,
+) -> None:
+    """Persist an identity to the database if available."""
+    session_factory = getattr(request.app.state, "db_session_factory", None)
+    if not session_factory:
+        return
+    try:
+        from agentforge.web.db.repository import IdentityRepository
+
+        with session_factory() as session:
+            repo = IdentityRepository(session)
+            repo.save(
+                name=name,
+                identity_yaml=identity_yaml,
+                source=source,
+                job_id=job_id,
+                extraction_json=extraction_json,
+                methodology_json=methodology_json,
+            )
+    except Exception:
+        logging.getLogger(__name__).exception("Failed to persist identity")
+
+
 def _run_forge(
     job: Job,
     file_path: Path,
@@ -251,7 +281,11 @@ async def import_identity(
 
     # Store as a completed job so the refine loop works
     store = _get_store(request)
-    job = store.create()
+    job = store.create(
+        job_type="import",
+        source_filename=Path(filename).stem,
+        output_format=output_format,
+    )
     job.status = "done"
 
     result_update["_refine_context"] = {
@@ -283,6 +317,18 @@ async def import_identity(
     result_update["blueprint"] = blueprint.model_dump(mode="json")
 
     job.result = result_update
+    store.persist_result(job)
+
+    # Persist identity to DB
+    _save_identity(
+        request,
+        name=extraction.role.title,
+        identity_yaml=identity_yaml,
+        source="import",
+        job_id=job.id,
+        extraction_json=extraction.model_dump(mode="json"),
+        methodology_json=methodology.model_dump(mode="json") if methodology else None,
+    )
 
     return {
         "job_id": job.id,
@@ -354,7 +400,13 @@ async def start_forge(
         culture_path = Path(ctmp.name)
 
     store = _get_store(request)
-    job = store.create()
+    job = store.create(
+        job_type="forge",
+        source_filename=filename,
+        mode=mode,
+        model=model,
+        output_format=output_format,
+    )
 
     do_anonymize = anonymize.lower() in ("true", "1", "on", "yes")
 
@@ -647,6 +699,18 @@ async def refine_skill(job_id: str, request: Request) -> dict:
 
     # Track whether skill folder has reference files (for zip download)
     has_references = bool(existing_files)
+
+    # Persist updated result and identity to DB
+    store.persist_result(job)
+    _save_identity(
+        request,
+        name=extraction.role.title,
+        identity_yaml=yaml_str,
+        source="refine",
+        job_id=job_id,
+        extraction_json=extraction.model_dump(mode="json"),
+        methodology_json=methodology.model_dump(mode="json"),
+    )
 
     # Return only the updated fields to the frontend
     return {

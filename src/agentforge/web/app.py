@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from pathlib import Path
@@ -11,6 +12,8 @@ from fastapi.staticfiles import StaticFiles
 
 from agentforge import __version__
 from agentforge.web.jobs import JobStore
+
+logger = logging.getLogger(__name__)
 
 _WEB_DIR = Path(__file__).parent
 _STATIC_DIR = _WEB_DIR / "static"
@@ -29,6 +32,27 @@ def _start_cleanup_thread(store: JobStore) -> None:
     t.start()
 
 
+def _init_database() -> tuple:
+    """Initialize database engine and session factory.
+
+    Returns (engine, session_factory) or (None, None) if DB deps are missing.
+    """
+    try:
+        from agentforge.web.db.engine import get_engine, get_session_factory, init_db
+
+        engine = get_engine()
+        init_db(engine)
+        session_factory = get_session_factory(engine)
+        logger.info("Database initialized: %s", engine.url)
+        return engine, session_factory
+    except ImportError:
+        logger.warning("SQLAlchemy not installed — running without database persistence")
+        return None, None
+    except Exception:
+        logger.exception("Failed to initialize database — running without persistence")
+        return None, None
+
+
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     app = FastAPI(
@@ -38,8 +62,20 @@ def create_app() -> FastAPI:
         redoc_url=None,
     )
 
-    store = JobStore()
+    # Initialize database
+    engine, session_factory = _init_database()
+    app.state.engine = engine
+    app.state.db_session_factory = session_factory
+
+    # Create job store with DB persistence
+    store = JobStore(session_factory=session_factory)
     app.state.jobs = store
+
+    # Recover any jobs stuck in "running" from a previous crash
+    recovered = store.recover_stale_jobs()
+    if recovered:
+        logger.info("Recovered %d stale jobs from previous run", recovered)
+
     _start_cleanup_thread(store)
 
     # Mount static files
@@ -54,5 +90,10 @@ def create_app() -> FastAPI:
     app.include_router(batch.router, prefix="/api")
     app.include_router(culture.router, prefix="/api")
     app.include_router(settings.router, prefix="/api")
+
+    # History API
+    from agentforge.web.routes import history
+
+    app.include_router(history.router, prefix="/api")
 
     return app

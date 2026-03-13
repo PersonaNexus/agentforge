@@ -137,7 +137,11 @@ async def start_batch(
         culture_path = Path(ctmp.name)
 
     store = _get_store(request)
-    job = store.create()
+    job = store.create(
+        job_type="batch",
+        source_filename=f"{len(file_paths)} files",
+        model=model,
+    )
 
     thread = threading.Thread(
         target=_run_batch,
