@@ -8,6 +8,7 @@ from agentforge.models.blueprint import AgentBlueprint
 from agentforge.pipeline.stages import (
     AnalyzeStage,
     AnonymizeStage,
+    ConductorGenerateStage,
     CultureStage,
     DeepAnalyzeStage,
     ExtractStage,
@@ -15,8 +16,11 @@ from agentforge.pipeline.stages import (
     IngestStage,
     MapStage,
     MethodologyStage,
+    MultiIngestStage,
     PipelineStage,
     TeamComposeStage,
+    TeamForgeStage,
+    TestStage,
     ToolMapStage,
 )
 
@@ -107,4 +111,21 @@ class ForgePipeline:
         pipeline.add_stage(ToolMapStage())
         pipeline.add_stage(DeepAnalyzeStage())
         pipeline.add_stage(TeamComposeStage())
+        return pipeline
+
+    @classmethod
+    def team(cls) -> "ForgePipeline":
+        """Team forge: extract once, compose team, forge each member + conductor."""
+        pipeline = cls()
+        pipeline.add_stage(IngestStage())
+        pipeline.add_stage(AnonymizeStage())
+        pipeline.add_stage(ExtractStage())
+        pipeline.add_stage(MethodologyStage())
+        pipeline.add_stage(MapStage())
+        pipeline.add_stage(CultureStage())
+        pipeline.add_stage(GenerateStage())
+        pipeline.add_stage(TeamComposeStage())
+        pipeline.add_stage(TeamForgeStage())
+        pipeline.add_stage(ConductorGenerateStage())
+        pipeline.add_stage(AnalyzeStage())
         return pipeline

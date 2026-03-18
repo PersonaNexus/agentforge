@@ -274,3 +274,164 @@ class TeamComposeStage(PipelineStage):
         composer = TeamComposer()
         context["agent_team"] = composer.compose(context["extraction"])
         return context
+
+
+class MultiIngestStage(PipelineStage):
+    """Ingest JD plus supplementary sources for methodology enrichment."""
+
+    name = "multi_ingest"
+
+    def run(self, context: dict[str, Any]) -> dict[str, Any]:
+        from pathlib import Path
+
+        # Standard JD ingestion
+        path = Path(context["input_path"])
+        suffix = path.suffix.lower()
+
+        if suffix == ".pdf":
+            from agentforge.ingestion.pdf import ingest_pdf
+            jd = ingest_pdf(path, company=context.get("company"))
+        elif suffix == ".docx":
+            from agentforge.ingestion.docx import ingest_docx
+            jd = ingest_docx(path, company=context.get("company"))
+        else:
+            from agentforge.ingestion.text import ingest_file
+            jd = ingest_file(path, company=context.get("company"))
+
+        context["jd"] = jd
+
+        # Parse supplementary sources
+        sources = context.get("supplementary_sources", [])
+        if sources:
+            from agentforge.ingestion.multi_source import (
+                compile_enrichment,
+                parse_supplementary_source,
+            )
+
+            corpora = []
+            for source in sources:
+                try:
+                    corpus = parse_supplementary_source(source)
+                    corpora.append(corpus)
+                except Exception:
+                    continue
+
+            if corpora:
+                enrichment = compile_enrichment(corpora)
+                # Merge enrichment into context for MethodologyStage
+                existing_examples = context.get("user_examples", "")
+                existing_frameworks = context.get("user_frameworks", "")
+
+                if enrichment.examples:
+                    context["user_examples"] = (
+                        f"{existing_examples}\n\n{enrichment.examples}".strip()
+                    )
+                if enrichment.frameworks:
+                    context["user_frameworks"] = (
+                        f"{existing_frameworks}\n\n{enrichment.frameworks}".strip()
+                    )
+                if enrichment.operational_context:
+                    context["operational_context"] = enrichment.operational_context
+
+                context["supplementary_enrichment"] = enrichment
+
+        return context
+
+
+class TestStage(PipelineStage):
+    """Run test scenarios against the generated skill."""
+
+    name = "test"
+
+    def run(self, context: dict[str, Any]) -> dict[str, Any]:
+        from agentforge.testing.scenario_generator import ScenarioGenerator
+        from agentforge.testing.skill_runner import SkillRunner
+        from agentforge.testing.evaluator import Evaluator
+
+        skill_folder = context.get("skill_folder")
+        if not skill_folder:
+            return context
+
+        scenarios = ScenarioGenerator().generate(
+            extraction=context["extraction"],
+            methodology=context.get("methodology"),
+        )
+
+        if not scenarios:
+            return context
+
+        llm_client = context.get("llm_client")
+        if not llm_client:
+            return context
+
+        executions = SkillRunner().run_scenarios(
+            skill_md=skill_folder.skill_md,
+            scenarios=scenarios,
+            llm_client=llm_client,
+        )
+
+        # Get quality criteria from methodology
+        meth = context.get("methodology")
+        default_criteria = None
+        if meth and meth.quality_criteria:
+            default_criteria = [c.criterion for c in meth.quality_criteria]
+
+        report = Evaluator().evaluate(
+            executions=executions,
+            default_criteria=default_criteria,
+            llm_client=llm_client,
+        )
+
+        context["test_report"] = report
+        return context
+
+
+class TeamForgeStage(PipelineStage):
+    """Forge individual skills for each team member."""
+
+    name = "team_forge"
+
+    def run(self, context: dict[str, Any]) -> dict[str, Any]:
+        from agentforge.composition.team_forger import TeamForger
+
+        agent_team = context.get("agent_team")
+        if not agent_team or not agent_team.teammates:
+            return context
+
+        forger = TeamForger()
+        context["forged_team"] = forger.forge_team(
+            team=agent_team,
+            extraction=context["extraction"],
+            methodology=context.get("methodology"),
+        )
+        return context
+
+
+class ConductorGenerateStage(PipelineStage):
+    """Generate conductor skill for team orchestration."""
+
+    name = "conductor_generate"
+
+    def run(self, context: dict[str, Any]) -> dict[str, Any]:
+        from agentforge.composition.conductor_generator import ConductorGenerator
+        from agentforge.composition.models import ForgedTeam
+
+        forged_teammates = context.get("forged_team")
+        agent_team = context.get("agent_team")
+        if not forged_teammates or not agent_team:
+            return context
+
+        generator = ConductorGenerator()
+        conductor = generator.generate(
+            team=agent_team,
+            forged_teammates=forged_teammates,
+            extraction=context["extraction"],
+        )
+
+        context["conductor"] = conductor
+        context["forged_team_result"] = ForgedTeam(
+            role_title=context["extraction"].role.title,
+            conductor=conductor,
+            teammates=forged_teammates,
+        )
+        return context

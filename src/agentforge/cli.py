@@ -688,6 +688,186 @@ def batch(
     processor.display_summary(results)
 
 
+# --- Team command ---
+
+@app.command()
+def team(
+    jd_file: Path = typer.Argument(..., help="Path to job description file"),
+    output_dir: Path = typer.Option(
+        Path("./team_output"), "--output-dir", "-d", help="Directory for output files"
+    ),
+    model: str = typer.Option(
+        "claude-sonnet-4-20250514", "--model", "-m", help="Claude model to use"
+    ),
+    culture: Path | None = typer.Option(
+        None, "--culture", "-c", help="Culture file to apply to all agents"
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging"),
+) -> None:
+    """Forge a complete multi-agent team from a single job description.
+
+    Creates specialized agent skills plus a conductor that orchestrates them.
+
+    Examples:
+        agentforge team job.txt -d ./agents
+        agentforge team posting.pdf --culture startup.yaml
+    """
+    from agentforge.pipeline.forge_pipeline import ForgePipeline
+
+    if verbose:
+        logging.basicConfig(level=logging.DEBUG)
+
+    if not jd_file.exists():
+        console.print(f"[red]Error:[/red] File not found: {jd_file}")
+        raise typer.Exit(code=1)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    pipeline = ForgePipeline.team()
+    client = _make_client(model)
+    context: dict = {
+        "input_path": str(jd_file),
+        "llm_client": client,
+    }
+    if culture:
+        context["culture_path"] = str(culture)
+
+    console.print(f"[blue]Forging team from:[/blue] {jd_file}")
+
+    try:
+        context = pipeline.run(context)
+    except Exception as e:
+        console.print(Panel(f"[red]{e}[/red]", title="Pipeline Failed", border_style="red"))
+        raise typer.Exit(code=1)
+
+    forged_team_result = context.get("forged_team_result")
+    if not forged_team_result:
+        console.print("[yellow]No team was composed — the role may be too narrow.[/yellow]")
+        raise typer.Exit(code=1)
+
+    # Save conductor
+    conductor = forged_team_result.conductor
+    conductor_dir = output_dir / conductor.skill_name
+    conductor_dir.mkdir(exist_ok=True)
+    (conductor_dir / "SKILL.md").write_text(conductor.skill_md)
+    console.print(f"[green]Conductor saved:[/green] {conductor_dir}/SKILL.md")
+
+    # Save each teammate
+    for ft in forged_team_result.teammates:
+        tm_dir = output_dir / ft.skill_folder.skill_name
+        tm_dir.mkdir(exist_ok=True)
+        (tm_dir / "SKILL.md").write_text(ft.skill_folder.skill_md)
+        for rel_path, content in ft.skill_folder.supplementary_files.items():
+            ref_path = tm_dir / rel_path
+            ref_path.parent.mkdir(parents=True, exist_ok=True)
+            ref_path.write_text(content)
+        console.print(f"[green]Agent saved:[/green] {tm_dir}/SKILL.md ({ft.teammate.archetype})")
+
+    # Save orchestration config
+    from agentforge.composition.orchestration_config import OrchestrationConfigExporter
+    exporter = OrchestrationConfigExporter()
+    orch_yaml = exporter.export_orchestration_yaml(forged_team_result)
+    (output_dir / "orchestration.yaml").write_text(orch_yaml)
+    console.print(f"[green]Orchestration config:[/green] {output_dir}/orchestration.yaml")
+
+    # Display team table
+    team_table = Table(title="Forged Agent Team", show_lines=True, title_style="bold cyan")
+    team_table.add_column("Agent", style="cyan")
+    team_table.add_column("Archetype", style="green")
+    team_table.add_column("Skills", style="dim", max_width=35)
+    for ft in forged_team_result.teammates:
+        skills_str = ", ".join(ft.teammate.skill_names()[:3])
+        if len(ft.teammate.skill_names()) > 3:
+            skills_str += f" +{len(ft.teammate.skill_names()) - 3}"
+        team_table.add_row(ft.teammate.name, ft.teammate.archetype, skills_str)
+    console.print(team_table)
+
+    console.print(
+        f"\n[bold green]Team of {len(forged_team_result.teammates)} agents + conductor forged![/bold green]\n"
+        f"  [dim]Copy {output_dir}/*/ to .claude/skills/ to use[/dim]"
+    )
+
+
+# --- Test command ---
+
+@app.command()
+def test(
+    jd_file: Path = typer.Argument(..., help="Path to job description file"),
+    model: str = typer.Option(
+        "claude-sonnet-4-20250514", "--model", "-m", help="Claude model to use"
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging"),
+) -> None:
+    """Forge an agent and run test scenarios against the generated skill.
+
+    Generates test cases from the extraction, runs them against the skill,
+    and scores the output using LLM-as-judge.
+
+    Examples:
+        agentforge test job.txt
+        agentforge test posting.pdf --model claude-haiku-4-5-20251001
+    """
+    from agentforge.pipeline.forge_pipeline import ForgePipeline
+    from agentforge.pipeline.stages import TestStage
+
+    if verbose:
+        logging.basicConfig(level=logging.DEBUG)
+
+    if not jd_file.exists():
+        console.print(f"[red]Error:[/red] File not found: {jd_file}")
+        raise typer.Exit(code=1)
+
+    # Build pipeline with test stage
+    pipeline = ForgePipeline.default()
+    pipeline.add_stage(TestStage())
+
+    client = _make_client(model)
+    context: dict = {
+        "input_path": str(jd_file),
+        "llm_client": client,
+    }
+
+    console.print(f"[blue]Forging and testing:[/blue] {jd_file}")
+
+    try:
+        context = pipeline.run(context)
+    except Exception as e:
+        console.print(Panel(f"[red]{e}[/red]", title="Pipeline Failed", border_style="red"))
+        raise typer.Exit(code=1)
+
+    report = context.get("test_report")
+    if not report:
+        console.print("[yellow]No test report generated — skill may not have been created.[/yellow]")
+        raise typer.Exit(code=1)
+
+    # Display test results
+    console.print(Panel(
+        f"[bold]{report.summary()}[/bold]\n"
+        f"Overall score: {report.overall_score:.0%}",
+        title="Test Report",
+        border_style="green" if report.overall_score >= 0.7 else "yellow" if report.overall_score >= 0.5 else "red",
+    ))
+
+    results_table = Table(title="Scenario Results", show_lines=True)
+    results_table.add_column("Scenario", style="cyan", max_width=30)
+    results_table.add_column("Score", justify="right", style="yellow")
+    results_table.add_column("Status", style="green")
+
+    for scored in report.scored_executions:
+        status = "[green]PASS[/green]" if scored.overall_score >= 0.7 else "[red]FAIL[/red]"
+        results_table.add_row(
+            scored.execution.scenario.name,
+            f"{scored.overall_score:.0%}",
+            status,
+        )
+    console.print(results_table)
+
+    if report.recommendations:
+        console.print("\n[yellow]Recommendations:[/yellow]")
+        for rec in report.recommendations:
+            console.print(f"  - {rec}")
+
+
 # --- Init command ---
 
 @app.command()

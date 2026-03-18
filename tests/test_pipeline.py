@@ -15,6 +15,7 @@ from agentforge.models.extracted_skills import (
     SkillProficiency,
     SuggestedTraits,
 )
+from agentforge.models.tool_profile import AgentToolProfile
 from agentforge.pipeline.forge_pipeline import ForgePipeline
 from agentforge.pipeline.stages import (
     AnalyzeStage,
@@ -33,6 +34,13 @@ def _mock_methodology_extractor():
     """Create a mock methodology extractor that returns empty methodology."""
     mock = MagicMock()
     mock.extract.return_value = MethodologyExtraction()
+    return mock
+
+
+def _mock_tool_mapper():
+    """Create a mock tool mapper that returns an empty tool profile."""
+    mock = MagicMock()
+    mock.map_tools.return_value = AgentToolProfile()
     return mock
 
 
@@ -68,7 +76,7 @@ class TestForgePipeline:
     def test_default_pipeline_stages(self):
         pipeline = ForgePipeline.default()
         names = [s.name for s in pipeline.stages]
-        assert names == ["ingest", "anonymize", "extract", "methodology", "map", "culture", "generate", "analyze", "team_compose"]
+        assert names == ["ingest", "anonymize", "extract", "methodology", "map", "culture", "generate", "tool_map", "analyze", "team_compose"]
 
     def test_quick_pipeline_stages(self):
         pipeline = ForgePipeline.quick()
@@ -110,6 +118,7 @@ class TestForgePipeline:
             "input_path": str(fixtures_dir / "senior_data_engineer.txt"),
             "extractor": mock_extractor,
             "methodology_extractor": _mock_methodology_extractor(),
+            "tool_mapper": _mock_tool_mapper(),
         }
 
         context = pipeline.run(context)
@@ -133,6 +142,7 @@ class TestForgePipeline:
             "input_path": str(fixtures_dir / "senior_data_engineer.txt"),
             "extractor": mock_extractor,
             "methodology_extractor": _mock_methodology_extractor(),
+            "tool_mapper": _mock_tool_mapper(),
         }
 
         context = pipeline.run(context)
@@ -200,6 +210,7 @@ class TestStages:
             "input_path": str(fixtures_dir / "senior_data_engineer.txt"),
             "extractor": mock_extractor,
             "methodology_extractor": _mock_methodology_extractor(),
+            "tool_mapper": _mock_tool_mapper(),
         }
         context = pipeline.run(context)
 

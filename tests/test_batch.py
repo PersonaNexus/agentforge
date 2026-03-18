@@ -17,6 +17,7 @@ from agentforge.models.extracted_skills import (
     SkillProficiency,
     SuggestedTraits,
 )
+from agentforge.models.tool_profile import AgentToolProfile
 from agentforge.pipeline.batch import BatchProcessor, BatchResult
 from agentforge.pipeline.forge_pipeline import ForgePipeline
 
@@ -25,6 +26,13 @@ def _mock_methodology_extractor():
     """Create a mock methodology extractor that returns empty methodology."""
     mock = MagicMock()
     mock.extract.return_value = MethodologyExtraction()
+    return mock
+
+
+def _mock_tool_mapper():
+    """Create a mock tool mapper that returns an empty tool profile."""
+    mock = MagicMock()
+    mock.map_tools.return_value = AgentToolProfile()
     return mock
 
 
@@ -82,7 +90,7 @@ class TestBatchProcessor:
 
         result = processor._process_single(
             str(fixtures_dir / "senior_data_engineer.txt"),
-            {"extractor": mock_extractor, "methodology_extractor": _mock_methodology_extractor()},
+            {"extractor": mock_extractor, "methodology_extractor": _mock_methodology_extractor(), "tool_mapper": _mock_tool_mapper()},
         )
 
         assert result.success
@@ -99,7 +107,7 @@ class TestBatchProcessor:
 
         result = processor._process_single(
             str(fixtures_dir / "senior_data_engineer.txt"),
-            {"extractor": mock_extractor, "methodology_extractor": _mock_methodology_extractor()},
+            {"extractor": mock_extractor, "methodology_extractor": _mock_methodology_extractor(), "tool_mapper": _mock_tool_mapper()},
         )
 
         assert result.success
@@ -136,7 +144,7 @@ class TestBatchProcessor:
             str(fixtures_dir / "customer_success_manager.txt"),
         ]
 
-        results = processor.process(jd_files, shared_context={"extractor": mock_extractor, "methodology_extractor": _mock_methodology_extractor()}, show_progress=False)
+        results = processor.process(jd_files, shared_context={"extractor": mock_extractor, "methodology_extractor": _mock_methodology_extractor(), "tool_mapper": _mock_tool_mapper()}, show_progress=False)
 
         assert len(results) == 2
         assert all(r.success for r in results)
@@ -155,7 +163,7 @@ class TestBatchProcessor:
             str(fixtures_dir / "ml_research_scientist.txt"),
         ]
 
-        results = processor.process(jd_files, shared_context={"extractor": mock_extractor, "methodology_extractor": _mock_methodology_extractor()}, show_progress=False)
+        results = processor.process(jd_files, shared_context={"extractor": mock_extractor, "methodology_extractor": _mock_methodology_extractor(), "tool_mapper": _mock_tool_mapper()}, show_progress=False)
 
         assert len(results) == 3
         assert all(r.success for r in results)
@@ -173,7 +181,7 @@ class TestBatchProcessor:
             "/nonexistent/file.txt",
         ]
 
-        results = processor.process(jd_files, shared_context={"extractor": mock_extractor, "methodology_extractor": _mock_methodology_extractor()}, show_progress=False)
+        results = processor.process(jd_files, shared_context={"extractor": mock_extractor, "methodology_extractor": _mock_methodology_extractor(), "tool_mapper": _mock_tool_mapper()}, show_progress=False)
 
         assert len(results) == 2
         successes = [r for r in results if r.success]
@@ -190,7 +198,7 @@ class TestBatchProcessor:
         processor = BatchProcessor(output_dir=output)
         results = processor.process(
             [str(fixtures_dir / "senior_data_engineer.txt")],
-            shared_context={"extractor": mock_extractor, "methodology_extractor": _mock_methodology_extractor()},
+            shared_context={"extractor": mock_extractor, "methodology_extractor": _mock_methodology_extractor(), "tool_mapper": _mock_tool_mapper()},
             show_progress=False,
         )
 
