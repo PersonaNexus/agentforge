@@ -160,6 +160,14 @@ agentforge batch ./jds/ --parallel 4 --culture enterprise.yaml
 # Import existing identity and re-export
 agentforge identity import agent.yaml --format both --refine
 
+# Multi-agent team forge
+agentforge team job.txt -d ./team-output
+agentforge team job.txt --culture startup.yaml -d ./team-output
+
+# Skill testing
+agentforge test job.txt
+agentforge test job.txt --model claude-sonnet-4-20250514
+
 # Culture tools
 agentforge culture parse culture.md --output profile.yaml
 agentforge culture to-mixin profile.yaml
@@ -175,6 +183,7 @@ agentforge culture list
 | **Default** | Ingest → Anonymize → Extract → Methodology → Map → Culture → Generate → ToolMap → Analyze → Team | Production use — full analysis |
 | **Quick** | Ingest → Anonymize → Extract → Methodology → Generate → Team | Rapid prototyping — ~50% faster |
 | **Deep** | Ingest → Anonymize → Extract → Methodology → Map → Culture → Generate → ToolMap → DeepAnalyze → Team | Per-skill coverage scores and priority ranking |
+| **Team** | Ingest → Anonymize → Extract → Methodology → Map → Culture → Generate → TeamCompose → TeamForge → ConductorGenerate → Analyze | Multi-agent team with conductor orchestration |
 
 ---
 
@@ -268,6 +277,123 @@ The **SKILL.md** contains:
 
 ---
 
+## Multi-Agent Teams
+
+The `team` command forges a complete agent team from a single JD. Instead of one monolithic agent, you get specialized teammates with a conductor that routes tasks between them.
+
+```bash
+agentforge team job_posting.txt -d ./team-output
+```
+
+### What you get
+
+| Output | Description |
+|--------|-------------|
+| **Conductor skill** | Routing table, workflows, handoff protocols — orchestrates the team |
+| **Teammate skills** | Each teammate gets a scoped SKILL.md focused on their specialty |
+| **Identity YAMLs** | PersonaNexus identities per teammate |
+| **orchestration.yaml** | Machine-readable team config for programmatic use |
+
+### How it works
+
+1. **TeamCompose** — analyzes the extraction and splits the role into complementary archetypes (e.g., Technical Builder, Data Navigator, Process Guardian)
+2. **TeamForge** — creates a scoped extraction per teammate (filtered skills, adjusted role title/purpose, personality traits from archetype)
+3. **ConductorGenerate** — builds the conductor skill with:
+   - **Routing table**: maps keywords/triggers to the right teammate
+   - **Workflows**: multi-step processes that chain teammates together
+   - **Handoff protocols**: how context transfers between agents
+
+### Output structure
+
+```
+team-output/
+├── conductor/
+│   └── SKILL.md              # Conductor with routing + workflows
+├── technical-builder/
+│   ├── SKILL.md              # Scoped skill for this teammate
+│   └── identity.yaml         # PersonaNexus identity
+├── data-navigator/
+│   ├── SKILL.md
+│   └── identity.yaml
+└── orchestration.yaml         # Full team config
+```
+
+---
+
+## Skill Testing & Validation
+
+Test a forged skill against auto-generated scenarios to catch gaps before deployment.
+
+```bash
+agentforge test job_posting.txt
+```
+
+### How it works
+
+1. **Scenario generation** — creates test cases from three sources:
+   - **Trigger mappings**: tests each trigger→technique pair from the methodology
+   - **Responsibilities**: creates prompts from the role's core duties
+   - **Edge cases**: out-of-scope requests and ambiguous inputs
+
+2. **Skill execution** — runs each scenario against the forged skill via LLM
+
+3. **Evaluation** — scores responses using:
+   - **LLM-as-judge** (when available): structured scoring against quality criteria
+   - **Heuristic fallback**: response length, criterion keyword coverage, structure detection
+
+### Test report
+
+The report shows:
+- **Overall score** (0–1)
+- **Pass rate** (% of scenarios scoring ≥ 0.7)
+- **Per-scenario breakdown**: input, response excerpt, score, criterion scores
+- **Weakest criteria**: which quality criteria consistently scored lowest
+- **Recommendations**: actionable suggestions for improvement
+
+---
+
+## Non-JD Input Sources
+
+Enrich your skills with context from real team artifacts — Slack conversations, git history, runbooks, and meeting notes.
+
+### Supported sources
+
+| Source | Format | What it extracts |
+|--------|--------|-----------------|
+| **Slack** | JSON export or ZIP | Decision points, recurring patterns, threaded discussions |
+| **Git log** | Custom format or repo path | Commit patterns (conventional commits), file categories, PR workflows |
+| **Runbook/SOP** | Markdown | Procedures (numbered steps), checklists, decision trees, templates |
+| **Meeting notes** | Markdown | Decisions, action items, recurring topics, stakeholder patterns |
+
+### How to use
+
+Each parser produces a corpus that converts to methodology enrichment — examples, frameworks, and operational context that get merged into the skill's methodology layer.
+
+```python
+from agentforge.ingestion.slack import SlackParser
+from agentforge.ingestion.multi_source import compile_enrichment
+
+# Parse a Slack export
+parser = SlackParser()
+corpus = parser.parse("slack_export/")
+
+# Convert to enrichment
+enrichment = compile_enrichment([corpus])
+print(enrichment.examples)           # Decision points found
+print(enrichment.frameworks)         # Procedures and patterns
+print(enrichment.operational_context) # Recurring workflows
+```
+
+### Auto-detection
+
+The `detect_source_type()` function identifies source type from filename and content:
+- `.zip` files → Slack
+- Files containing "runbook", "procedure", "SOP" → Runbook
+- Files containing "meeting", "attendees", "minutes" → Meeting notes
+- Otherwise → defaults to meeting notes
+
+---
+
 ## Tips
 
 - **Start with Extract** to preview what the LLM will pull from a JD before running a full forge
@@ -277,3 +403,6 @@ The **SKILL.md** contains:
 - **Deep mode** is worth the extra time when you need to know exactly which skills have gaps
 - **Provide examples** in the enhance section — even 2-3 sentences dramatically improve methodology quality
 - **Check the Agent Tools tab** after forging to get a ready-to-use `.mcp.json` for your agent's tool setup
+- **Use `team` for complex roles** — if a JD covers multiple disciplines, a team of specialized agents outperforms one generalist
+- **Run `test` before deploying** — catches methodology gaps, especially missing edge case handling
+- **Feed in Slack/git history** — real decision patterns from your team produce far better methodology than a JD alone

@@ -44,6 +44,12 @@ agentforge forge job_posting.txt --deep
 
 # Batch-process a directory of JDs
 agentforge batch ./job_descriptions/ -d ./agents --parallel 4
+
+# Forge a multi-agent team with conductor
+agentforge team job_posting.txt -d ./team-output
+
+# Test a forged skill against generated scenarios
+agentforge test job_posting.txt
 ```
 
 ## Python API
@@ -132,6 +138,37 @@ In your project's `.mcp.json` or `~/.claude/mcp.json`:
 python -m agentforge.mcp_server      # stdio transport
 ```
 
+## Multi-agent teams
+
+Forge a complete agent team from a single JD — each teammate gets a scoped skill, and a conductor agent handles routing and handoffs:
+
+```bash
+agentforge team job_posting.txt -d ./team-output
+```
+
+Outputs: conductor skill, per-teammate skills, identity YAMLs, and `orchestration.yaml`.
+
+## Skill testing
+
+Validate a forged skill by running it against auto-generated test scenarios:
+
+```bash
+agentforge test job_posting.txt
+```
+
+Generates scenarios from trigger mappings, responsibilities, and edge cases. Evaluates responses with LLM-as-judge scoring and produces a pass/fail report.
+
+## Non-JD input sources
+
+Enrich skills with context beyond the job description:
+
+```bash
+# Supplement a forge with Slack history, git logs, runbooks, or meeting notes
+agentforge forge job.txt --supplement slack_export.zip --supplement runbook.md
+```
+
+Supported sources: Slack JSON exports, git log output, runbook/SOP markdown, meeting notes. Each parser extracts decision patterns, recurring workflows, and domain context that gets merged into the methodology layer.
+
 ## Project structure
 
 ```
@@ -140,12 +177,14 @@ src/agentforge/
 ├── mcp_server.py           # MCP tool server
 ├── extraction/             # LLM-powered skill extraction
 ├── generation/             # Identity & skill file generation
-├── ingestion/              # PDF, DOCX, text file readers
+├── ingestion/              # PDF, DOCX, text + Slack, git, runbook, meeting notes
 ├── llm/                    # LLM client (Anthropic + OpenAI)
 ├── mapping/                # Skill-to-trait mapping, culture
 ├── models/                 # Pydantic data models
 ├── pipeline/               # Composable forge pipeline
-├── analysis/               # Gap analysis, skill review
+├── analysis/               # Gap analysis, skill review, team composition
+├── composition/            # Multi-agent team forging, conductor generation
+├── testing/                # Skill validation, scenario generation, evaluation
 ├── web/                    # FastAPI app, routes, templates
 └── templates/              # Culture templates, prompts
 ```
