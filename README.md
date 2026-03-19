@@ -30,6 +30,9 @@ export OPENAI_API_KEY=sk-...
 ## Quick start
 
 ```bash
+# Interactive wizard — guided experience for all commands
+agentforge wizard
+
 # Extract skills from a job description
 agentforge extract job_posting.txt
 
@@ -187,6 +190,7 @@ Supported sources: Slack JSON exports, git log output, runbook/SOP markdown, mee
 ```
 src/agentforge/
 ├── cli.py                  # Typer CLI
+├── cli_wizard.py           # Interactive wizard
 ├── mcp_server.py           # MCP tool server
 ├── extraction/             # LLM-powered skill extraction
 ├── generation/             # Identity & skill file generation

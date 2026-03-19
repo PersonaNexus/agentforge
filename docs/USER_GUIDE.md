@@ -142,6 +142,10 @@ Select any completed forge job → view or (re)generate its tool profile.
 ## CLI Reference
 
 ```bash
+# Interactive wizard — walks you through command selection, file picking,
+# options, pipeline execution, and post-run actions (refine, team, export)
+agentforge wizard
+
 # Extract skills only (no skill file generation)
 agentforge extract job.txt --format yaml --output skills.yaml
 
@@ -430,6 +434,7 @@ The `detect_source_type()` function identifies source type from filename and con
 
 ## Tips
 
+- **Try `agentforge wizard`** for a guided experience — it handles command selection, file discovery, option configuration, and post-run actions (refine, team, export)
 - **Start with Extract** to preview what the LLM will pull from a JD before running a full forge
 - **Use culture profiles** when building multiple agents for the same org — ensures consistent tone
 - **Anonymize** before sharing skills externally to strip company names
