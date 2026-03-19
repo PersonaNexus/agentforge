@@ -559,8 +559,10 @@ class TestSupplementaryFilePersistence:
         buf = io.BytesIO(resp.content)
         with zipfile.ZipFile(buf) as zf:
             names = zf.namelist()
+            # Examples go to examples/good/, frameworks go to references/
+            example_files = [n for n in names if "examples/good/" in n]
             ref_files = [n for n in names if "references/" in n]
-            assert len(ref_files) >= 2
+            assert len(example_files) + len(ref_files) >= 2
 
     def test_existing_refs_not_lost_on_refine(self, client, completed_job_with_refs):
         """Pre-existing reference files should survive a refine cycle."""
@@ -656,7 +658,7 @@ class TestSkillRefiner:
         meth = MethodologyExtraction()
 
         ext, meth, files = refiner.merge(ext, meth, {"examples": "When reviewing code, I always check for N+1 queries first..."})
-        assert "references/work-examples.md" in files
+        assert "examples/good/work-examples.md" in files
 
     def test_merge_frameworks_creates_reference_file(self):
         from agentforge.analysis.skill_refiner import SkillRefiner
