@@ -1,5 +1,6 @@
 """Export orchestration configs for different runtimes."""
 from __future__ import annotations
+from agentforge.composition.langgraph_export import LangGraphExporter
 from agentforge.composition.models import ConductorSkill, ForgedTeam, ForgedTeammate
 
 
@@ -54,3 +55,8 @@ class OrchestrationConfigExporter:
             })
 
         return yaml.dump(config, default_flow_style=False, sort_keys=False)
+
+    def export_langgraph(self, team: ForgedTeam) -> str:
+        """Export team as a runnable LangGraph StateGraph Python module."""
+        exporter = LangGraphExporter()
+        return exporter.export(team)

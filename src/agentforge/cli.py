@@ -702,6 +702,10 @@ def team(
     culture: Path | None = typer.Option(
         None, "--culture", "-c", help="Culture file to apply to all agents"
     ),
+    fmt: str = typer.Option(
+        "claude", "--format", "-f",
+        help="Output format: claude (default), langgraph, or both",
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging"),
 ) -> None:
     """Forge a complete multi-agent team from a single job description.
@@ -711,6 +715,7 @@ def team(
     Examples:
         agentforge team job.txt -d ./agents
         agentforge team posting.pdf --culture startup.yaml
+        agentforge team job.txt --format langgraph
     """
     from agentforge.pipeline.forge_pipeline import ForgePipeline
 
@@ -769,6 +774,17 @@ def team(
     orch_yaml = exporter.export_orchestration_yaml(forged_team_result)
     (output_dir / "orchestration.yaml").write_text(orch_yaml)
     console.print(f"[green]Orchestration config:[/green] {output_dir}/orchestration.yaml")
+
+    # LangGraph export
+    if fmt in ("langgraph", "both"):
+        langgraph_py = exporter.export_langgraph(forged_team_result)
+        graph_path = output_dir / "agent_graph.py"
+        graph_path.write_text(langgraph_py)
+        console.print(f"[green]LangGraph module:[/green] {graph_path}")
+        console.print(
+            '  [dim]Install deps: pip install "agentforge[langgraph]"[/dim]\n'
+            f"  [dim]Run: python {graph_path} \"your task here\"[/dim]"
+        )
 
     # Display team table
     team_table = Table(title="Forged Agent Team", show_lines=True, title_style="bold cyan")

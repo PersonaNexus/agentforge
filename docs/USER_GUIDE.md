@@ -163,6 +163,8 @@ agentforge identity import agent.yaml --format both --refine
 # Multi-agent team forge
 agentforge team job.txt -d ./team-output
 agentforge team job.txt --culture startup.yaml -d ./team-output
+agentforge team job.txt --format langgraph -d ./team-output
+agentforge team job.txt --format both -d ./team-output
 
 # Skill testing
 agentforge test job.txt
@@ -317,6 +319,38 @@ team-output/
 │   └── identity.yaml
 └── orchestration.yaml         # Full team config
 ```
+
+### LangGraph export
+
+Export the team as a runnable [LangGraph](https://langchain-ai.github.io/langgraph/) `StateGraph`:
+
+```bash
+agentforge team job.txt --format langgraph -d ./team-output
+```
+
+This generates `agent_graph.py` — a self-contained Python module containing:
+
+- **`TeamState`** — a `TypedDict` with messages, current_agent, task, result, and metadata
+- **Agent nodes** — one per teammate, each wrapping the teammate's SKILL.md as a system prompt
+- **`ROUTING_TABLE`** — keyword-to-agent mapping from the conductor's routing table
+- **`route_task()`** — conditional entry point that scores keywords to pick the right agent
+- **`WORKFLOWS`** — multi-agent workflow definitions (for reference/extension)
+- **`build_graph()`** — assembles and returns the compiled `StateGraph`
+
+```bash
+# Install LangGraph deps
+pip install "agentforge[langgraph]"
+
+# Run directly
+python team-output/agent_graph.py "Design a new ETL pipeline"
+```
+
+The generated graph uses `set_conditional_entry_point` for routing and terminates after a single agent responds. You can extend it with:
+- Subgraph nodes for multi-step workflows
+- Human-in-the-loop checkpoints
+- Memory persistence via LangGraph's `MemorySaver`
+
+Use `--format both` to get Claude Code skills **and** the LangGraph module.
 
 ---
 

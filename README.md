@@ -148,6 +148,19 @@ agentforge team job_posting.txt -d ./team-output
 
 Outputs: conductor skill, per-teammate skills, identity YAMLs, and `orchestration.yaml`.
 
+### LangGraph export
+
+Export the team as a runnable LangGraph `StateGraph`:
+
+```bash
+agentforge team job_posting.txt -d ./team-output --format langgraph
+
+# Or get both Claude Code skills and LangGraph module
+agentforge team job_posting.txt --format both
+```
+
+Produces `agent_graph.py` — a self-contained Python module with typed state, agent nodes, conductor routing, and a compiled graph. Requires `pip install "agentforge[langgraph]"`.
+
 ## Skill testing
 
 Validate a forged skill by running it against auto-generated test scenarios:
