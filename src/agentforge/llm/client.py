@@ -121,6 +121,62 @@ class LLMClient:
             return self._extract_openai(prompt, output_schema, system, max_tokens)
         return self._extract_anthropic(prompt, output_schema, system, max_tokens)
 
+    def generate(
+        self,
+        prompt: str,
+        system: str | None = None,
+        max_tokens: int = 4096,
+    ) -> str:
+        """Make a plain text generation call.
+
+        Unlike extract_structured(), this returns raw text without
+        tool/function calling.
+        """
+        if self.provider == "openai":
+            return self._generate_openai(prompt, system, max_tokens)
+        return self._generate_anthropic(prompt, system, max_tokens)
+
+    def _generate_anthropic(
+        self,
+        prompt: str,
+        system: str | None,
+        max_tokens: int,
+    ) -> str:
+        kwargs: dict[str, Any] = {
+            "model": self.model,
+            "max_tokens": max_tokens,
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        if system:
+            kwargs["system"] = system
+
+        response = self._call_anthropic_with_retry(**kwargs)
+        for block in response.content:
+            if hasattr(block, "text"):
+                return block.text
+        return ""
+
+    def _generate_openai(
+        self,
+        prompt: str,
+        system: str | None,
+        max_tokens: int,
+    ) -> str:
+        messages: list[dict[str, Any]] = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+
+        kwargs: dict[str, Any] = {
+            "model": self.model,
+            "max_tokens": max_tokens,
+            "messages": messages,
+        }
+
+        response = self._call_openai_with_retry(**kwargs)
+        choice = response.choices[0]
+        return choice.message.content or ""
+
     # ------------------------------------------------------------------
     # Anthropic implementation
     # ------------------------------------------------------------------

@@ -192,6 +192,14 @@ def forge(
     culture: Path | None = typer.Option(
         None, "--culture", "-c", help="Culture file (YAML or markdown) to infuse"
     ),
+    examples: Path | None = typer.Option(
+        None, "--examples", "-e",
+        help="File containing work samples/examples (txt or md)",
+    ),
+    frameworks: Path | None = typer.Option(
+        None, "--frameworks",
+        help="File containing frameworks/methodologies (txt or md)",
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging"),
 ) -> None:
     """Forge a complete AI agent blueprint from a job description.
@@ -209,6 +217,7 @@ def forge(
         agentforge forge posting.md --quick --no-skill-file
         agentforge forge job.txt --skill-folder  # also save skill folder to disk
         agentforge forge job.txt --deep  # enhanced gap analysis
+        agentforge forge job.txt --examples samples.md --frameworks methods.md
     """
     from agentforge.pipeline.forge_pipeline import ForgePipeline
 
@@ -221,6 +230,14 @@ def forge(
 
     if culture and not culture.exists():
         console.print(f"[red]Error:[/red] Culture file not found: {culture}")
+        raise typer.Exit(code=1)
+
+    if examples and not examples.exists():
+        console.print(f"[red]Error:[/red] Examples file not found: {examples}")
+        raise typer.Exit(code=1)
+
+    if frameworks and not frameworks.exists():
+        console.print(f"[red]Error:[/red] Frameworks file not found: {frameworks}")
         raise typer.Exit(code=1)
 
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -242,6 +259,12 @@ def forge(
     if culture:
         context["culture_path"] = str(culture)
         console.print(f"[blue]Culture:[/blue] {culture}")
+    if examples:
+        context["user_examples"] = examples.read_text()
+        console.print(f"[blue]Examples:[/blue] {examples}")
+    if frameworks:
+        context["user_frameworks"] = frameworks.read_text()
+        console.print(f"[blue]Frameworks:[/blue] {frameworks}")
 
     console.print(f"[blue]Forging agent from:[/blue] {jd_file}")
 
@@ -395,6 +418,14 @@ def identity_import(
     model: str = typer.Option(
         "claude-sonnet-4-20250514", "--model", "-m", help="Claude model to use for refinement"
     ),
+    examples: Path | None = typer.Option(
+        None, "--examples", "-e",
+        help="File containing work samples/examples (txt or md)",
+    ),
+    frameworks: Path | None = typer.Option(
+        None, "--frameworks",
+        help="File containing frameworks/methodologies (txt or md)",
+    ),
     refine: bool = typer.Option(
         False, "--refine", help="Run LLM-based refinement after import"
     ),
@@ -409,6 +440,7 @@ def identity_import(
         agentforge identity import agent_identity.yaml
         agentforge identity import my-agent.yaml -d ./output --format both
         agentforge identity import agent.yaml --refine  # LLM-enhanced round-trip
+        agentforge identity import agent.yaml --examples samples.md
     """
     if verbose:
         logging.basicConfig(level=logging.DEBUG)
@@ -450,6 +482,22 @@ def identity_import(
             f"Quality criteria: {len(methodology.quality_criteria)}"
         )
 
+    # Read user-provided examples/frameworks
+    user_examples = ""
+    user_frameworks = ""
+    if examples:
+        if not examples.exists():
+            console.print(f"[red]Error:[/red] Examples file not found: {examples}")
+            raise typer.Exit(code=1)
+        user_examples = examples.read_text()
+        console.print(f"[blue]Examples:[/blue] {examples}")
+    if frameworks:
+        if not frameworks.exists():
+            console.print(f"[red]Error:[/red] Frameworks file not found: {frameworks}")
+            raise typer.Exit(code=1)
+        user_frameworks = frameworks.read_text()
+        console.print(f"[blue]Frameworks:[/blue] {frameworks}")
+
     _display_extraction(extraction)
 
     # Regenerate identity (round-trip)
@@ -466,7 +514,10 @@ def identity_import(
         from agentforge.generation.skill_folder import SkillFolderGenerator
 
         sf_gen = SkillFolderGenerator()
-        sf = sf_gen.generate(extraction, identity, jd=None, methodology=methodology)
+        sf = sf_gen.generate(
+            extraction, identity, jd=None, methodology=methodology,
+            user_examples=user_examples, user_frameworks=user_frameworks,
+        )
 
         folder_path = safe_output_path(output_dir, sf.skill_name)
         folder_path.mkdir(exist_ok=True)
@@ -632,6 +683,14 @@ def batch(
     culture: Path | None = typer.Option(
         None, "--culture", "-c", help="Culture file to apply to all agents"
     ),
+    examples: Path | None = typer.Option(
+        None, "--examples", "-e",
+        help="File containing work samples/examples to apply to all agents",
+    ),
+    frameworks: Path | None = typer.Option(
+        None, "--frameworks",
+        help="File containing frameworks/methodologies to apply to all agents",
+    ),
     parallel: int = typer.Option(1, "--parallel", "-p", help="Number of parallel workers"),
     model: str = typer.Option(
         "claude-sonnet-4-20250514", "--model", "-m", help="Claude model to use"
@@ -643,6 +702,7 @@ def batch(
     Examples:
         agentforge batch ./job_descriptions/ -d ./agents
         agentforge batch ./jds/ --culture startup.yaml --parallel 4
+        agentforge batch ./jds/ --examples samples.md --frameworks methods.md
     """
     from agentforge.pipeline.batch import BatchProcessor
     from agentforge.pipeline.forge_pipeline import ForgePipeline
@@ -676,6 +736,18 @@ def batch(
             raise typer.Exit(code=1)
         shared_context["culture_path"] = str(culture)
         console.print(f"[blue]Culture:[/blue] {culture}")
+    if examples:
+        if not examples.exists():
+            console.print(f"[red]Error:[/red] Examples file not found: {examples}")
+            raise typer.Exit(code=1)
+        shared_context["user_examples"] = examples.read_text()
+        console.print(f"[blue]Examples:[/blue] {examples}")
+    if frameworks:
+        if not frameworks.exists():
+            console.print(f"[red]Error:[/red] Frameworks file not found: {frameworks}")
+            raise typer.Exit(code=1)
+        shared_context["user_frameworks"] = frameworks.read_text()
+        console.print(f"[blue]Frameworks:[/blue] {frameworks}")
 
     pipeline = ForgePipeline.default()
     processor = BatchProcessor(
@@ -686,6 +758,227 @@ def batch(
 
     results = processor.process(jd_files, shared_context=shared_context)
     processor.display_summary(results)
+
+
+# --- Team command ---
+
+@app.command()
+def team(
+    jd_file: Path = typer.Argument(..., help="Path to job description file"),
+    output_dir: Path = typer.Option(
+        Path("./team_output"), "--output-dir", "-d", help="Directory for output files"
+    ),
+    model: str = typer.Option(
+        "claude-sonnet-4-20250514", "--model", "-m", help="Claude model to use"
+    ),
+    culture: Path | None = typer.Option(
+        None, "--culture", "-c", help="Culture file to apply to all agents"
+    ),
+    examples: Path | None = typer.Option(
+        None, "--examples", "-e",
+        help="File containing work samples/examples to apply to all agents",
+    ),
+    frameworks: Path | None = typer.Option(
+        None, "--frameworks",
+        help="File containing frameworks/methodologies to apply to all agents",
+    ),
+    fmt: str = typer.Option(
+        "claude", "--format", "-f",
+        help="Output format: claude (default), langgraph, or both",
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging"),
+) -> None:
+    """Forge a complete multi-agent team from a single job description.
+
+    Creates specialized agent skills plus a conductor that orchestrates them.
+
+    Examples:
+        agentforge team job.txt -d ./agents
+        agentforge team posting.pdf --culture startup.yaml
+        agentforge team job.txt --format langgraph
+        agentforge team job.txt --examples samples.md --frameworks methods.md
+    """
+    from agentforge.pipeline.forge_pipeline import ForgePipeline
+
+    if verbose:
+        logging.basicConfig(level=logging.DEBUG)
+
+    if fmt not in ("claude", "langgraph", "both"):
+        console.print(f"[red]Error:[/red] Invalid format: {fmt}. Choose: claude, langgraph, both")
+        raise typer.Exit(code=1)
+
+    if not jd_file.exists():
+        console.print(f"[red]Error:[/red] File not found: {jd_file}")
+        raise typer.Exit(code=1)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    pipeline = ForgePipeline.team()
+    client = _make_client(model)
+    context: dict = {
+        "input_path": str(jd_file),
+        "llm_client": client,
+    }
+    if culture:
+        context["culture_path"] = str(culture)
+    if examples:
+        if not examples.exists():
+            console.print(f"[red]Error:[/red] Examples file not found: {examples}")
+            raise typer.Exit(code=1)
+        context["user_examples"] = examples.read_text()
+        console.print(f"[blue]Examples:[/blue] {examples}")
+    if frameworks:
+        if not frameworks.exists():
+            console.print(f"[red]Error:[/red] Frameworks file not found: {frameworks}")
+            raise typer.Exit(code=1)
+        context["user_frameworks"] = frameworks.read_text()
+        console.print(f"[blue]Frameworks:[/blue] {frameworks}")
+
+    console.print(f"[blue]Forging team from:[/blue] {jd_file}")
+
+    try:
+        context = pipeline.run(context)
+    except Exception as e:
+        console.print(Panel(f"[red]{e}[/red]", title="Pipeline Failed", border_style="red"))
+        raise typer.Exit(code=1)
+
+    forged_team_result = context.get("forged_team_result")
+    if not forged_team_result:
+        console.print("[yellow]No team was composed — the role may be too narrow.[/yellow]")
+        raise typer.Exit(code=1)
+
+    # Save conductor
+    conductor = forged_team_result.conductor
+    conductor_dir = output_dir / conductor.skill_name
+    conductor_dir.mkdir(exist_ok=True)
+    (conductor_dir / "SKILL.md").write_text(conductor.skill_md)
+    console.print(f"[green]Conductor saved:[/green] {conductor_dir}/SKILL.md")
+
+    # Save each teammate
+    for ft in forged_team_result.teammates:
+        tm_dir = output_dir / ft.skill_folder.skill_name
+        tm_dir.mkdir(exist_ok=True)
+        (tm_dir / "SKILL.md").write_text(ft.skill_folder.skill_md)
+        for rel_path, content in ft.skill_folder.supplementary_files.items():
+            ref_path = tm_dir / rel_path
+            ref_path.parent.mkdir(parents=True, exist_ok=True)
+            ref_path.write_text(content)
+        console.print(f"[green]Agent saved:[/green] {tm_dir}/SKILL.md ({ft.teammate.archetype})")
+
+    # Save orchestration config
+    from agentforge.composition.orchestration_config import OrchestrationConfigExporter
+    exporter = OrchestrationConfigExporter()
+    orch_yaml = exporter.export_orchestration_yaml(forged_team_result)
+    (output_dir / "orchestration.yaml").write_text(orch_yaml)
+    console.print(f"[green]Orchestration config:[/green] {output_dir}/orchestration.yaml")
+
+    # LangGraph export
+    if fmt in ("langgraph", "both"):
+        langgraph_py = exporter.export_langgraph(forged_team_result)
+        graph_path = output_dir / "agent_graph.py"
+        graph_path.write_text(langgraph_py)
+        console.print(f"[green]LangGraph module:[/green] {graph_path}")
+        console.print(
+            '  [dim]Install deps: pip install "agentforge[langgraph]"[/dim]\n'
+            f"  [dim]Run: python {graph_path} \"your task here\"[/dim]"
+        )
+
+    # Display team table
+    team_table = Table(title="Forged Agent Team", show_lines=True, title_style="bold cyan")
+    team_table.add_column("Agent", style="cyan")
+    team_table.add_column("Archetype", style="green")
+    team_table.add_column("Skills", style="dim", max_width=35)
+    for ft in forged_team_result.teammates:
+        skills_str = ", ".join(ft.teammate.skill_names()[:3])
+        if len(ft.teammate.skill_names()) > 3:
+            skills_str += f" +{len(ft.teammate.skill_names()) - 3}"
+        team_table.add_row(ft.teammate.name, ft.teammate.archetype, skills_str)
+    console.print(team_table)
+
+    console.print(
+        f"\n[bold green]Team of {len(forged_team_result.teammates)} agents + conductor forged![/bold green]\n"
+        f"  [dim]Copy {output_dir}/*/ to .claude/skills/ to use[/dim]"
+    )
+
+
+# --- Test command ---
+
+@app.command()
+def test(
+    jd_file: Path = typer.Argument(..., help="Path to job description file"),
+    model: str = typer.Option(
+        "claude-sonnet-4-20250514", "--model", "-m", help="Claude model to use"
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging"),
+) -> None:
+    """Forge an agent and run test scenarios against the generated skill.
+
+    Generates test cases from the extraction, runs them against the skill,
+    and scores the output using LLM-as-judge.
+
+    Examples:
+        agentforge test job.txt
+        agentforge test posting.pdf --model claude-haiku-4-5-20251001
+    """
+    from agentforge.pipeline.forge_pipeline import ForgePipeline
+    from agentforge.pipeline.stages import TestStage
+
+    if verbose:
+        logging.basicConfig(level=logging.DEBUG)
+
+    if not jd_file.exists():
+        console.print(f"[red]Error:[/red] File not found: {jd_file}")
+        raise typer.Exit(code=1)
+
+    # Build pipeline with test stage
+    pipeline = ForgePipeline.default()
+    pipeline.add_stage(TestStage())
+
+    client = _make_client(model)
+    context: dict = {
+        "input_path": str(jd_file),
+        "llm_client": client,
+    }
+
+    console.print(f"[blue]Forging and testing:[/blue] {jd_file}")
+
+    try:
+        context = pipeline.run(context)
+    except Exception as e:
+        console.print(Panel(f"[red]{e}[/red]", title="Pipeline Failed", border_style="red"))
+        raise typer.Exit(code=1)
+
+    report = context.get("test_report")
+    if not report:
+        console.print("[yellow]No test report generated — skill may not have been created.[/yellow]")
+        raise typer.Exit(code=1)
+
+    # Display test results
+    console.print(Panel(
+        f"[bold]{report.summary()}[/bold]\n"
+        f"Overall score: {report.overall_score:.0%}",
+        title="Test Report",
+        border_style="green" if report.overall_score >= 0.7 else "yellow" if report.overall_score >= 0.5 else "red",
+    ))
+
+    results_table = Table(title="Scenario Results", show_lines=True)
+    results_table.add_column("Scenario", style="cyan", max_width=30)
+    results_table.add_column("Score", justify="right", style="yellow")
+    results_table.add_column("Status", style="green")
+
+    for scored in report.scored_executions:
+        status = "[green]PASS[/green]" if scored.overall_score >= 0.7 else "[red]FAIL[/red]"
+        results_table.add_row(
+            scored.execution.scenario.name,
+            f"{scored.overall_score:.0%}",
+            status,
+        )
+    console.print(results_table)
+
+    if report.recommendations:
+        console.print("\n[yellow]Recommendations:[/yellow]")
+        for rec in report.recommendations:
+            console.print(f"  - {rec}")
 
 
 # --- Init command ---
@@ -808,6 +1101,21 @@ def init() -> None:
         title="Setup Complete",
         border_style="green",
     ))
+
+
+@app.command()
+def wizard() -> None:
+    """Interactive wizard — guided experience for forging agents.
+
+    Walks you through command selection, file picking, option configuration,
+    pipeline execution, and post-run actions (refine, team, export).
+
+    Examples:
+        agentforge wizard
+    """
+    from agentforge.cli_wizard import run_wizard
+
+    run_wizard()
 
 
 @app.command()

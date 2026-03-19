@@ -136,10 +136,10 @@ class SkillRefiner:
             template=text,
         ))
 
-        # Also save as a reference file if content is substantial
+        # Also save as a template file if content is substantial
         if supplementary is not None and len(text) > 100:
             slug = self._safe_filename(name)
-            supplementary[f"references/{slug}.md"] = (
+            supplementary[f"templates/{slug}.md"] = (
                 f"# {name}\n\n"
                 "Use this as a reference template for output formatting.\n\n"
                 f"{text}"
@@ -221,9 +221,9 @@ class SkillRefiner:
         """Treat user examples as output templates + reference files."""
         self._merge_templates(meth, text, supplementary)
 
-        # Always save examples as a standalone reference file
+        # Always save examples as a good-output example file
         if supplementary is not None:
-            supplementary["references/work-examples.md"] = (
+            supplementary["examples/good/work-examples.md"] = (
                 "# Work Examples\n\n"
                 "Real-world examples provided by the skill author. "
                 "Use these as reference for tone, structure, and quality.\n\n"

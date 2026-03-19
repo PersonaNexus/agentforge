@@ -30,6 +30,8 @@ def _run_batch(
     model: str,
     parallel: int,
     culture_path: Path | None,
+    user_examples: str = "",
+    user_frameworks: str = "",
 ) -> None:
     """Worker thread: processes multiple JDs and emits SSE progress events."""
     try:
@@ -43,6 +45,10 @@ def _run_batch(
         shared_context: dict[str, Any] = {"llm_client": client}
         if culture_path:
             shared_context["culture_path"] = str(culture_path)
+        if user_examples:
+            shared_context["user_examples"] = user_examples
+        if user_frameworks:
+            shared_context["user_frameworks"] = user_frameworks
 
         pipeline = ForgePipeline.default()
         processor = BatchProcessor(pipeline=pipeline, parallel=parallel)
@@ -106,6 +112,8 @@ async def start_batch(
     model: str = Form("claude-sonnet-4-20250514"),
     parallel: int = Form(1),
     culture_file: UploadFile | None = File(None),
+    user_examples: str = Form(""),
+    user_frameworks: str = Form(""),
 ) -> dict:
     """Start a batch processing job."""
     if not files:
@@ -146,6 +154,7 @@ async def start_batch(
     thread = threading.Thread(
         target=_run_batch,
         args=(job, file_paths, model, max(1, parallel), culture_path),
+        kwargs={"user_examples": user_examples, "user_frameworks": user_frameworks},
         daemon=True,
     )
     thread.start()

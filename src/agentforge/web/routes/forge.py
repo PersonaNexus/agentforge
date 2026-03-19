@@ -208,6 +208,8 @@ async def import_identity(
     request: Request,
     file: UploadFile = File(...),
     output_format: str = Form("claude_code"),
+    user_examples: str = Form(""),
+    user_frameworks: str = Form(""),
 ) -> dict:
     """Import an existing PersonaNexus identity YAML and prepare it for refinement.
 
@@ -262,6 +264,8 @@ async def import_identity(
             extraction, identity,
             jd=None,
             methodology=methodology,
+            user_examples=user_examples,
+            user_frameworks=user_frameworks,
         )
         supplementary_files = dict(sf.supplementary_files)
         result_update["skill_folder"] = {
@@ -299,8 +303,8 @@ async def import_identity(
         "methodology": methodology.model_dump(mode="json") if methodology else None,
         "identity_yaml": identity_yaml,
         "output_format": output_format,
-        "user_examples": "",
-        "user_frameworks": "",
+        "user_examples": user_examples,
+        "user_frameworks": user_frameworks,
         "supplementary_files": supplementary_files,
     }
 
@@ -640,6 +644,21 @@ async def refine_skill(job_id: str, request: Request) -> dict:
     user_examples = refine_ctx.get("user_examples", "")
     user_frameworks = refine_ctx.get("user_frameworks", "")
 
+    # Merge uploaded files into examples/frameworks so SkillFolderGenerator
+    # receives them as first-class inputs (not just supplementary files).
+    if uploaded_files:
+        examples_cats = {"examples", "work_samples", "work-samples"}
+        frameworks_cats = {"frameworks", "methodologies"}
+        for filename, content in uploaded_files.items():
+            cat = next(
+                (c for c in file_categories if c.lower() in frameworks_cats), None
+            )
+            if cat:
+                user_frameworks = (user_frameworks + "\n\n" + content).strip()
+            else:
+                # Default: treat uploaded files as examples
+                user_examples = (user_examples + "\n\n" + content).strip()
+
     result_update: dict[str, Any] = {
         "identity_yaml": yaml_str,
     }
@@ -702,6 +721,8 @@ async def refine_skill(job_id: str, request: Request) -> dict:
     job.result["_refine_context"]["extraction"] = extraction.model_dump(mode="json")
     job.result["_refine_context"]["methodology"] = methodology.model_dump(mode="json")
     job.result["_refine_context"]["supplementary_files"] = existing_files
+    job.result["_refine_context"]["user_examples"] = user_examples
+    job.result["_refine_context"]["user_frameworks"] = user_frameworks
 
     # Track whether skill folder has reference files (for zip download)
     has_references = bool(existing_files)

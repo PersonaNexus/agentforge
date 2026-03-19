@@ -66,6 +66,14 @@ class ForgeInput(BaseModel):
         default=None,
         description="Optional culture profile YAML content to infuse",
     )
+    user_examples: str = Field(
+        default="",
+        description="Work samples or examples text to enrich methodology extraction",
+    )
+    user_frameworks: str = Field(
+        default="",
+        description="Frameworks or methodologies text to enrich methodology extraction",
+    )
 
 
 class ForgeFileInput(BaseModel):
@@ -77,6 +85,14 @@ class ForgeFileInput(BaseModel):
         description="LLM model to use",
     )
     quick: bool = Field(default=False, description="Skip culture, mapping, and gap analysis")
+    user_examples: str = Field(
+        default="",
+        description="Work samples or examples text to enrich methodology extraction",
+    )
+    user_frameworks: str = Field(
+        default="",
+        description="Frameworks or methodologies text to enrich methodology extraction",
+    )
 
 
 def _create_server():  # noqa: ANN202
@@ -180,6 +196,11 @@ def _do_forge(args: dict) -> dict:
 
     context: dict = {"jd": jd, "llm_client": client}
 
+    if inp.user_examples:
+        context["user_examples"] = inp.user_examples
+    if inp.user_frameworks:
+        context["user_frameworks"] = inp.user_frameworks
+
     if inp.culture_yaml:
         import tempfile
 
@@ -210,6 +231,10 @@ def _do_forge_file(args: dict) -> dict:
 
     client = _make_client(inp.model)
     context: dict = {"input_path": str(path), "llm_client": client}
+    if inp.user_examples:
+        context["user_examples"] = inp.user_examples
+    if inp.user_frameworks:
+        context["user_frameworks"] = inp.user_frameworks
     context = pipeline.run(context)
 
     return _context_to_result(context)
