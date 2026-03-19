@@ -1104,6 +1104,21 @@ def init() -> None:
 
 
 @app.command()
+def wizard() -> None:
+    """Interactive wizard — guided experience for forging agents.
+
+    Walks you through command selection, file picking, option configuration,
+    pipeline execution, and post-run actions (refine, team, export).
+
+    Examples:
+        agentforge wizard
+    """
+    from agentforge.cli_wizard import run_wizard
+
+    run_wizard()
+
+
+@app.command()
 def version() -> None:
     """Show AgentForge version."""
     from agentforge import __version__
