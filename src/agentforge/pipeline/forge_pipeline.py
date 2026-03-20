@@ -9,6 +9,7 @@ from agentforge.pipeline.stages import (
     AnalyzeStage,
     AnonymizeStage,
     ConductorGenerateStage,
+    CronEnrichStage,
     CultureStage,
     DeepAnalyzeStage,
     ExtractStage,
@@ -17,7 +18,9 @@ from agentforge.pipeline.stages import (
     MapStage,
     MethodologyStage,
     MultiIngestStage,
+    OpenClawCompileStage,
     PipelineStage,
+    SupplementScoreStage,
     TeamComposeStage,
     TeamForgeStage,
     TestStage,
@@ -128,4 +131,39 @@ class ForgePipeline:
         pipeline.add_stage(TeamForgeStage())
         pipeline.add_stage(ConductorGenerateStage())
         pipeline.add_stage(AnalyzeStage())
+        return pipeline
+
+    @classmethod
+    def openclaw(cls) -> "ForgePipeline":
+        """Full pipeline with OpenClaw compilation: JD → OpenClaw-ready files."""
+        pipeline = cls()
+        pipeline.add_stage(IngestStage())
+        pipeline.add_stage(AnonymizeStage())
+        pipeline.add_stage(ExtractStage())
+        pipeline.add_stage(MethodologyStage())
+        pipeline.add_stage(MapStage())
+        pipeline.add_stage(CultureStage())
+        pipeline.add_stage(GenerateStage())
+        pipeline.add_stage(ToolMapStage())
+        pipeline.add_stage(AnalyzeStage())
+        pipeline.add_stage(TeamComposeStage())
+        pipeline.add_stage(CronEnrichStage())
+        pipeline.add_stage(OpenClawCompileStage())
+        return pipeline
+
+    @classmethod
+    def cron(cls) -> "ForgePipeline":
+        """Pipeline for cron/scheduled agents with cron-specific enrichment."""
+        pipeline = cls()
+        pipeline.add_stage(IngestStage())
+        pipeline.add_stage(AnonymizeStage())
+        pipeline.add_stage(ExtractStage())
+        pipeline.add_stage(MethodologyStage())
+        pipeline.add_stage(MapStage())
+        pipeline.add_stage(CultureStage())
+        pipeline.add_stage(GenerateStage())
+        pipeline.add_stage(ToolMapStage())
+        pipeline.add_stage(AnalyzeStage())
+        pipeline.add_stage(TeamComposeStage())
+        pipeline.add_stage(CronEnrichStage())
         return pipeline

@@ -435,3 +435,94 @@ class ConductorGenerateStage(PipelineStage):
             teammates=forged_teammates,
         )
         return context
+
+
+class OpenClawCompileStage(PipelineStage):
+    """Compile pipeline output into OpenClaw-ready deployment files."""
+
+    name = "openclaw_compile"
+
+    def run(self, context: dict[str, Any]) -> dict[str, Any]:
+        from agentforge.generation.openclaw_compiler import OpenClawCompiler
+
+        compiler = OpenClawCompiler()
+        context["openclaw_output"] = compiler.compile(
+            extraction=context["extraction"],
+            identity_yaml=context["identity_yaml"],
+            identity=context["identity"],
+            methodology=context.get("methodology"),
+            skill_folder=context.get("skill_folder"),
+            schedule=context.get("cron_schedule"),
+            cron_config=context.get("cron_config_dict"),
+        )
+        return context
+
+
+class CronEnrichStage(PipelineStage):
+    """Enrich identity YAML and skill output with cron-specific scaffolding."""
+
+    name = "cron_enrich"
+
+    def run(self, context: dict[str, Any]) -> dict[str, Any]:
+        cron_schedule = context.get("cron_schedule")
+        if not cron_schedule:
+            return context
+
+        from agentforge.generation.cron_template import CronConfig, CronTemplateGenerator
+
+        config = CronConfig(
+            schedule=cron_schedule,
+            timezone=context.get("cron_timezone", "UTC"),
+        )
+        generator = CronTemplateGenerator()
+
+        # Enrich identity YAML
+        if "identity_yaml" in context:
+            context["identity_yaml"] = generator.enrich_identity_yaml(
+                context["identity_yaml"], config,
+            )
+
+        # Enrich skill folder SKILL.md
+        sf = context.get("skill_folder")
+        if sf:
+            enriched_md = generator.enrich_skill_md(
+                sf.skill_md, context["extraction"], config,
+            )
+            sf.skill_md = enriched_md
+
+        # Store cron config dict for downstream stages
+        context["cron_config_dict"] = config.to_dict()
+        return context
+
+
+class SupplementScoreStage(PipelineStage):
+    """Score supplementary sources before ingestion."""
+
+    name = "supplement_score"
+
+    def run(self, context: dict[str, Any]) -> dict[str, Any]:
+        sources = context.get("supplementary_sources", [])
+        if not sources:
+            return context
+
+        from agentforge.analysis.supplement_scorer import SupplementScorer
+
+        scorer = SupplementScorer()
+        extraction = context.get("extraction")
+        role_keywords: list[str] = []
+        if extraction:
+            role_keywords = [extraction.role.title, extraction.role.domain]
+            role_keywords.extend(s.name for s in extraction.skills[:10])
+
+        source_pairs: list[tuple[str, str]] = []
+        for source in sources:
+            from pathlib import Path
+            p = Path(source)
+            if p.exists():
+                source_pairs.append((p.name, p.read_text()))
+
+        if source_pairs:
+            report = scorer.score_sources(source_pairs, role_keywords)
+            context["supplement_report"] = report
+
+        return context

@@ -200,6 +200,26 @@ def forge(
         None, "--frameworks",
         help="File containing frameworks/methodologies (txt or md)",
     ),
+    target: str = typer.Option(
+        "", "--target", "-t",
+        help="Deployment target: 'openclaw' for OpenClaw-ready output",
+    ),
+    mode: str = typer.Option(
+        "", "--mode",
+        help="Agent mode: 'cron' for scheduled/autonomous agents",
+    ),
+    schedule: str = typer.Option(
+        "", "--schedule",
+        help="Cron schedule expression (e.g. '0 8 * * *') — used with --mode cron",
+    ),
+    methodology: bool = typer.Option(
+        True, "--methodology/--no-methodology",
+        help="Extract decision patterns and trigger-technique mappings (default: on)",
+    ),
+    supplement: list[Path] | None = typer.Option(
+        None, "--supplement", "-s",
+        help="Supplementary source files to enrich methodology (repeatable)",
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging"),
 ) -> None:
     """Forge a complete AI agent blueprint from a job description.
@@ -210,14 +230,16 @@ def forge(
       - PersonaNexus identity YAML (always)
       - Claude Code skill folder (always) — drop into .claude/skills/ to use
       - Full agent profile SKILL.md (unless --no-skill-file) — detailed analysis
+      - OpenClaw files (with --target openclaw): SOUL.md, STYLE.md, personality.json
 
     Examples:
         agentforge forge job_posting.txt
         agentforge forge resume.pdf --culture startup.yaml -d ./agents
         agentforge forge posting.md --quick --no-skill-file
-        agentforge forge job.txt --skill-folder  # also save skill folder to disk
-        agentforge forge job.txt --deep  # enhanced gap analysis
-        agentforge forge job.txt --examples samples.md --frameworks methods.md
+        agentforge forge job.txt --target openclaw -d ./openclaw-agents/
+        agentforge forge job.txt --mode cron --schedule "0 8 * * *"
+        agentforge forge job.txt --supplement convos.md --supplement runbook.md
+        agentforge forge job.txt --no-methodology  # skip decision pattern extraction
     """
     from agentforge.pipeline.forge_pipeline import ForgePipeline
 
@@ -242,13 +264,46 @@ def forge(
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # Score supplements if provided (E6)
+    if supplement:
+        from agentforge.analysis.supplement_scorer import SupplementScorer
+        scorer = SupplementScorer()
+        source_pairs = []
+        for s in supplement:
+            if not s.exists():
+                console.print(f"[red]Error:[/red] Supplement file not found: {s}")
+                raise typer.Exit(code=1)
+            source_pairs.append((s.name, s.read_text()))
+        if source_pairs:
+            report = scorer.score_sources(source_pairs)
+            for score in report.scores:
+                quality = score.assessment
+                color = "green" if quality == "high" else "yellow" if quality == "medium" else "red"
+                hint = "" if quality != "low" else " — consider filtering"
+                console.print(
+                    f"[blue]Supplement quality:[/blue] {score.source}    "
+                    f"[{color}]{score.pct}% signal ({quality}{hint})[/{color}]"
+                )
+            if report.has_low_quality:
+                if not typer.confirm("Proceed with low-quality source(s)?", default=True):
+                    console.print("[yellow]Aborted.[/yellow]")
+                    raise typer.Exit(code=0)
+
     # Build pipeline
-    if quick_mode:
+    if target == "openclaw":
+        pipeline = ForgePipeline.openclaw()
+    elif mode == "cron":
+        pipeline = ForgePipeline.cron()
+    elif quick_mode:
         pipeline = ForgePipeline.quick()
     elif deep:
         pipeline = ForgePipeline.deep_analysis()
     else:
         pipeline = ForgePipeline.default()
+
+    # Skip methodology if explicitly disabled (E1)
+    if not methodology:
+        pipeline.skip_stage("methodology")
 
     # Set up context
     client = _make_client(model)
@@ -265,6 +320,13 @@ def forge(
     if frameworks:
         context["user_frameworks"] = frameworks.read_text()
         console.print(f"[blue]Frameworks:[/blue] {frameworks}")
+    if mode == "cron":
+        context["cron_schedule"] = schedule or "0 8 * * *"
+        console.print(f"[blue]Mode:[/blue] cron (schedule: {context['cron_schedule']})")
+    if target == "openclaw":
+        console.print(f"[blue]Target:[/blue] OpenClaw")
+    if supplement:
+        context["supplementary_sources"] = [str(s) for s in supplement]
 
     console.print(f"[blue]Forging agent from:[/blue] {jd_file}")
 
@@ -386,6 +448,20 @@ def forge(
         console.print(
             f"[green]Claude Code skill saved:[/green] {folder_path}/\n"
             f"  [dim]SKILL.md{ref_msg} — copy to .claude/skills/ or ~/.claude/skills/ to use[/dim]"
+        )
+
+    # Save OpenClaw files (E3)
+    if "openclaw_output" in context:
+        oc = context["openclaw_output"]
+        for rel_path, content in oc.file_map().items():
+            out_path = output_dir / rel_path
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(content)
+        console.print(
+            f"[green]OpenClaw files saved:[/green] {output_dir}/\n"
+            f"  [dim]{oc.agent_name}.SOUL.md, {oc.agent_name}.STYLE.md, "
+            f"{oc.agent_name}.personality.json, {oc.agent_name}-skills/[/dim]\n"
+            f"  [dim]Ready to drop into OpenClaw workspace[/dim]"
         )
 
     # Build blueprint
@@ -774,6 +850,10 @@ def team(
     culture: Path | None = typer.Option(
         None, "--culture", "-c", help="Culture file to apply to all agents"
     ),
+    validate: bool = typer.Option(
+        False, "--validate",
+        help="Validate team for trait overlaps, routing gaps, and guardrail coverage",
+    ),
     examples: Path | None = typer.Option(
         None, "--examples", "-e",
         help="File containing work samples/examples to apply to all agents",
@@ -864,6 +944,29 @@ def team(
             ref_path.parent.mkdir(parents=True, exist_ok=True)
             ref_path.write_text(content)
         console.print(f"[green]Agent saved:[/green] {tm_dir}/SKILL.md ({ft.teammate.archetype})")
+
+    # Team validation (E5)
+    if validate:
+        from agentforge.analysis.team_validator import TeamValidator
+        validator = TeamValidator()
+        validation = validator.validate(forged_team_result)
+
+        for issue in validation.issues:
+            color = {"error": "red", "warning": "yellow", "info": "green"}.get(issue.severity, "white")
+            console.print(f"  [{color}]{issue}[/{color}]")
+
+        if not validation.passed:
+            console.print(Panel(
+                f"[red]Team validation failed: {validation.summary()}[/red]",
+                title="Validation Failed",
+                border_style="red",
+            ))
+        else:
+            console.print(Panel(
+                f"[green]{validation.summary()}[/green]",
+                title="Validation Passed",
+                border_style="green",
+            ))
 
     # Save orchestration config
     from agentforge.composition.orchestration_config import OrchestrationConfigExporter
@@ -1101,6 +1204,196 @@ def init() -> None:
         title="Setup Complete",
         border_style="green",
     ))
+
+
+@app.command()
+def refine(
+    skill_dir: Path = typer.Argument(..., help="Path to forged skill directory (containing SKILL.md)"),
+    feedback: str = typer.Option(
+        ..., "--feedback", "-f", help="Feedback on what to improve"
+    ),
+    output_dir: Path = typer.Option(
+        Path("."), "--output-dir", "-d", help="Directory for refined output"
+    ),
+    model: str = typer.Option(
+        "claude-sonnet-4-20250514", "--model", "-m", help="Claude model to use"
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging"),
+) -> None:
+    """Refine a forged skill based on usage feedback.
+
+    Takes a forged skill directory and feedback, produces an improved v2 with diff.
+
+    Examples:
+        agentforge refine agents/atlas/ --feedback "too verbose in briefings"
+        agentforge refine ./my-skill/ -f "misses market signals" -d ./output
+    """
+    if verbose:
+        logging.basicConfig(level=logging.DEBUG)
+
+    if not skill_dir.exists():
+        console.print(f"[red]Error:[/red] Directory not found: {skill_dir}")
+        raise typer.Exit(code=1)
+
+    skill_md_path = skill_dir / "SKILL.md"
+    if not skill_md_path.exists():
+        console.print(f"[red]Error:[/red] SKILL.md not found in {skill_dir}")
+        raise typer.Exit(code=1)
+
+    from agentforge.refinement.refiner import SkillRefiner
+
+    console.print(f"[blue]Refining:[/blue] {skill_dir}")
+    console.print(f"[blue]Feedback:[/blue] {feedback}")
+
+    client = _make_client(model)
+    refiner = SkillRefiner(client=client)
+
+    try:
+        result = refiner.refine_from_path(skill_dir, feedback)
+    except Exception as e:
+        console.print(Panel(f"[red]{e}[/red]", title="Refinement Failed", border_style="red"))
+        raise typer.Exit(code=1)
+
+    # Show diff
+    if result.diff_text:
+        console.print(Panel(result.diff_text, title="Changes", border_style="yellow"))
+    else:
+        console.print("[yellow]No differences detected — skill may already address this feedback.[/yellow]")
+
+    # Save refined output
+    output_dir.mkdir(parents=True, exist_ok=True)
+    skill_name = skill_dir.name
+    out_path = refiner.save_refined(result, output_dir, skill_name)
+    console.print(f"[green]Refined skill saved:[/green] {out_path}/SKILL.md")
+    console.print(
+        f"\n[bold green]Skill refined successfully![/bold green]\n"
+        f"  [dim]Original: {skill_dir}[/dim]\n"
+        f"  [dim]Refined:  {out_path}[/dim]"
+    )
+
+
+@app.command(name="diff")
+def drift_diff(
+    spec_dir: Path = typer.Argument(..., help="Path to original forged spec directory"),
+    current: Path = typer.Option(
+        ..., "--current", "-c", help="Path to current running agent directory"
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging"),
+) -> None:
+    """Detect drift between a forged spec and running agent files.
+
+    Compares the original forged agent against its current runtime state.
+    Surfaces trait drift, guardrail changes, and file mismatches.
+
+    Examples:
+        agentforge diff agents/atlas/ --current ~/.openclaw/agents/atlas/
+        agentforge diff ./spec/ -c ./runtime/
+    """
+    if verbose:
+        logging.basicConfig(level=logging.DEBUG)
+
+    if not spec_dir.exists():
+        console.print(f"[red]Error:[/red] Spec directory not found: {spec_dir}")
+        raise typer.Exit(code=1)
+
+    if not current.exists():
+        console.print(f"[red]Error:[/red] Current directory not found: {current}")
+        raise typer.Exit(code=1)
+
+    from agentforge.analysis.drift_detector import DriftDetector
+
+    console.print(f"[blue]Spec:[/blue] {spec_dir}")
+    console.print(f"[blue]Current:[/blue] {current}")
+
+    detector = DriftDetector()
+    report = detector.detect(spec_dir, current)
+
+    if not report.findings:
+        console.print("[green]No drift detected — spec and runtime are in sync.[/green]")
+        return
+
+    # Display findings
+    for finding in report.findings:
+        color = {"significant": "red", "minor": "yellow", "info": "green"}.get(
+            finding.severity, "white"
+        )
+        console.print(f"  [{color}]{finding}[/{color}]")
+
+    console.print(Panel(
+        report.recommendation,
+        title=report.summary(),
+        border_style="yellow" if report.has_significant_drift else "green",
+    ))
+
+
+@app.command()
+def interview(
+    output: Path = typer.Option(
+        Path("interview_output.txt"), "--output", "-o",
+        help="Output file for generated role description",
+    ),
+    forge_after: bool = typer.Option(
+        False, "--forge",
+        help="Immediately forge an agent from the interview output",
+    ),
+    model: str = typer.Option(
+        "claude-sonnet-4-20250514", "--model", "-m", help="Claude model for forging"
+    ),
+    output_dir: Path = typer.Option(
+        Path("."), "--output-dir", "-d", help="Output directory for forge results"
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging"),
+) -> None:
+    """Interactive interview to build a role description before forging.
+
+    Asks structured questions about purpose, tasks, boundaries, and output
+    preferences, then generates a role description. Optionally forges immediately.
+
+    Examples:
+        agentforge interview
+        agentforge interview --forge -d ./agents
+        agentforge interview -o my_agent.txt
+    """
+    if verbose:
+        logging.basicConfig(level=logging.DEBUG)
+
+    from agentforge.interview.interviewer import AgentInterviewer
+
+    interviewer = AgentInterviewer()
+    result = interviewer.interview()
+
+    role_desc = result.to_role_description()
+    output.write_text(role_desc)
+    console.print(f"[green]Role description saved:[/green] {output}")
+
+    if forge_after:
+        console.print("[blue]Forging agent from interview...[/blue]")
+        from agentforge.pipeline.forge_pipeline import ForgePipeline
+
+        pipeline = ForgePipeline.default()
+        client = _make_client(model)
+        context: dict = {
+            "input_path": str(output),
+            "llm_client": client,
+        }
+
+        try:
+            context = pipeline.run(context)
+        except Exception as e:
+            console.print(Panel(f"[red]{e}[/red]", title="Forge Failed", border_style="red"))
+            raise typer.Exit(code=1)
+
+        extraction = context["extraction"]
+        identity_yaml = context["identity_yaml"]
+        agent_id = context["identity"].metadata.id
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+        yaml_path = safe_output_path(output_dir, f"{agent_id}.yaml")
+        yaml_path.write_text(identity_yaml)
+        console.print(f"[green]Identity saved:[/green] {yaml_path}")
+        console.print(
+            f"\n[bold green]Agent '{extraction.role.title}' forged from interview![/bold green]"
+        )
 
 
 @app.command()
