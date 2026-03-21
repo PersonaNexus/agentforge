@@ -461,3 +461,129 @@ class TestExtractStructured:
                 os.environ["ANTHROPIC_API_KEY"] = old_ant
             if old_oai is not None:
                 os.environ["OPENAI_API_KEY"] = old_oai
+
+
+class TestBearerAuthMiddleware:
+    def test_no_token_configured_allows_all(self):
+        """When no token is set, requests pass through."""
+        from agentforge.web.auth import _get_api_token
+
+        old = os.environ.pop("AGENTFORGE_API_TOKEN", None)
+        try:
+            with patch("agentforge.config.load_config") as mock_cfg:
+                mock_cfg.return_value = MagicMock(web_api_token=None)
+                token = _get_api_token()
+                assert token is None
+        finally:
+            if old is not None:
+                os.environ["AGENTFORGE_API_TOKEN"] = old
+
+    def test_env_token_used(self):
+        """Environment variable AGENTFORGE_API_TOKEN should be picked up."""
+        from agentforge.web.auth import _get_api_token
+
+        old = os.environ.get("AGENTFORGE_API_TOKEN")
+        os.environ["AGENTFORGE_API_TOKEN"] = "test-secret-123"
+        try:
+            token = _get_api_token()
+            assert token == "test-secret-123"
+        finally:
+            if old is not None:
+                os.environ["AGENTFORGE_API_TOKEN"] = old
+            else:
+                os.environ.pop("AGENTFORGE_API_TOKEN", None)
+
+    def test_disabled_token(self):
+        """Setting token to 'disabled' should return 'disabled'."""
+        from agentforge.web.auth import _get_api_token
+
+        old = os.environ.get("AGENTFORGE_API_TOKEN")
+        os.environ["AGENTFORGE_API_TOKEN"] = "disabled"
+        try:
+            token = _get_api_token()
+            assert token == "disabled"
+        finally:
+            if old is not None:
+                os.environ["AGENTFORGE_API_TOKEN"] = old
+            else:
+                os.environ.pop("AGENTFORGE_API_TOKEN", None)
+
+
+class TestRateLimiter:
+    def test_sliding_window_allows_under_limit(self):
+        """Requests under the limit should be allowed."""
+        from agentforge.web.rate_limit import _SlidingWindowCounter
+
+        limiter = _SlidingWindowCounter(max_requests=3, window_seconds=60)
+        assert limiter.is_allowed("client1") is True
+        assert limiter.is_allowed("client1") is True
+        assert limiter.is_allowed("client1") is True
+
+    def test_sliding_window_blocks_over_limit(self):
+        """Requests over the limit should be blocked."""
+        from agentforge.web.rate_limit import _SlidingWindowCounter
+
+        limiter = _SlidingWindowCounter(max_requests=2, window_seconds=60)
+        assert limiter.is_allowed("client1") is True
+        assert limiter.is_allowed("client1") is True
+        assert limiter.is_allowed("client1") is False
+
+    def test_sliding_window_per_client(self):
+        """Different clients should have independent limits."""
+        from agentforge.web.rate_limit import _SlidingWindowCounter
+
+        limiter = _SlidingWindowCounter(max_requests=1, window_seconds=60)
+        assert limiter.is_allowed("client1") is True
+        assert limiter.is_allowed("client2") is True
+        assert limiter.is_allowed("client1") is False
+
+    def test_cleanup_removes_stale_entries(self):
+        """Cleanup should remove entries past the window."""
+        from agentforge.web.rate_limit import _SlidingWindowCounter
+
+        limiter = _SlidingWindowCounter(max_requests=1, window_seconds=0)
+        limiter.is_allowed("client1")
+        limiter.cleanup()
+        assert "client1" not in limiter._requests
+
+
+class TestPromptInjectionDefenses:
+    def test_extraction_prompt_has_boundary_tags(self):
+        """Extraction prompt should use XML boundary tags for user content."""
+        from agentforge.extraction.prompts import EXTRACTION_PROMPT
+
+        assert "<job_description>" in EXTRACTION_PROMPT
+        assert "</job_description>" in EXTRACTION_PROMPT
+        assert "untrusted" in EXTRACTION_PROMPT.lower()
+
+    def test_methodology_prompt_has_boundary_tags(self):
+        """Methodology user context should use XML boundary tags."""
+        from agentforge.extraction.prompts import METHODOLOGY_USER_CONTEXT_WITH_EXAMPLES
+
+        assert "<user_examples>" in METHODOLOGY_USER_CONTEXT_WITH_EXAMPLES
+        assert "<user_frameworks>" in METHODOLOGY_USER_CONTEXT_WITH_EXAMPLES
+        assert "untrusted" in METHODOLOGY_USER_CONTEXT_WITH_EXAMPLES.lower()
+
+    def test_refine_prompt_has_boundary_tags(self):
+        """Refine prompt should use XML boundary tags for feedback."""
+        from agentforge.refinement.refiner import REFINE_PROMPT
+
+        assert "<user_feedback>" in REFINE_PROMPT
+        assert "</user_feedback>" in REFINE_PROMPT
+        assert "untrusted" in REFINE_PROMPT.lower()
+
+    def test_jd_text_truncated(self):
+        """SkillExtractor should truncate excessively long JD text."""
+        from agentforge.extraction.skill_extractor import SkillExtractor
+
+        assert SkillExtractor._MAX_JD_CHARS == 50_000
+
+
+class TestThreadPoolCap:
+    def test_app_has_executor(self):
+        """The app should have a bounded thread pool executor."""
+        from agentforge.web.app import create_app
+
+        app = create_app()
+        assert hasattr(app.state, "executor")
+        assert app.state.executor._max_workers <= 10  # reasonable cap

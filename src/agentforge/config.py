@@ -23,6 +23,10 @@ class AgentForgeConfig(BaseModel):
     output_dir: str = "."
     default_culture: str | None = None
     batch_parallel: int = Field(default=1, ge=1)
+    web_api_token: str | None = Field(
+        default=None,
+        description="Bearer token for web API authentication. Set to 'disabled' to opt out.",
+    )
 
 
 def load_config(config_path: Path | None = None) -> AgentForgeConfig:

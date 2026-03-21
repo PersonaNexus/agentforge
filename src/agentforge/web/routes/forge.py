@@ -6,7 +6,6 @@ import io
 import json
 import logging
 import tempfile
-import threading
 import traceback
 import zipfile
 from pathlib import Path
@@ -425,13 +424,12 @@ async def start_forge(
 
     do_anonymize = anonymize.lower() in ("true", "1", "on", "yes")
 
-    thread = threading.Thread(
-        target=_run_forge,
-        args=(job, file_path, mode, model, culture_path, filename, parsed_traits,
-              user_examples, user_frameworks, output_format, do_anonymize),
-        daemon=True,
+    executor = request.app.state.executor
+    executor.submit(
+        _run_forge,
+        job, file_path, mode, model, culture_path, filename, parsed_traits,
+        user_examples, user_frameworks, output_format, do_anonymize,
     )
-    thread.start()
 
     return {"job_id": job.id}
 

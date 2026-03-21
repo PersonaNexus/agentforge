@@ -5,7 +5,6 @@ from __future__ import annotations
 import io
 import json
 import tempfile
-import threading
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -159,13 +158,12 @@ async def start_batch(
         model=model,
     )
 
-    thread = threading.Thread(
-        target=_run_batch,
-        args=(job, file_paths, model, max(1, parallel), culture_path),
-        kwargs={"user_examples": user_examples, "user_frameworks": user_frameworks},
-        daemon=True,
+    executor = request.app.state.executor
+    executor.submit(
+        _run_batch,
+        job, file_paths, model, max(1, parallel), culture_path,
+        user_examples=user_examples, user_frameworks=user_frameworks,
     )
-    thread.start()
 
     return {"job_id": job.id}
 

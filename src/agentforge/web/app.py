@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -71,12 +73,23 @@ def create_app() -> FastAPI:
     store = JobStore(session_factory=session_factory)
     app.state.jobs = store
 
+    # Shared thread pool for forge/batch workers (prevents unbounded thread creation)
+    max_workers = int(os.environ.get("AGENTFORGE_MAX_WORKERS", "4"))
+    app.state.executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="forge")
+
     # Recover any jobs stuck in "running" from a previous crash
     recovered = store.recover_stale_jobs()
     if recovered:
         logger.info("Recovered %d stale jobs from previous run", recovered)
 
     _start_cleanup_thread(store)
+
+    # Add security middleware (order matters: auth first, then rate limit)
+    from agentforge.web.auth import BearerAuthMiddleware
+    from agentforge.web.rate_limit import RateLimitMiddleware
+
+    app.add_middleware(RateLimitMiddleware)
+    app.add_middleware(BearerAuthMiddleware)
 
     # Mount static files
     app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
