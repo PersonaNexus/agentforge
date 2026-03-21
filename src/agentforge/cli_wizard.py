@@ -245,7 +245,7 @@ def _run_forge(jd_file: Path, opts: dict) -> dict:
     """Run the forge pipeline and return context."""
     from agentforge.cli import _display_extraction, _make_client
     from agentforge.pipeline.forge_pipeline import ForgePipeline
-    from agentforge.utils import safe_output_path
+    from agentforge.utils import safe_output_path, safe_rel_path
 
     mode = opts.get("mode", "default")
     if mode == "quick":
@@ -289,7 +289,7 @@ def _run_forge(jd_file: Path, opts: dict) -> dict:
         folder_path.mkdir(exist_ok=True)
         (folder_path / "SKILL.md").write_text(sf.skill_md_with_references())
         for rel_path, content in sf.supplementary_files.items():
-            ref_path = folder_path / rel_path
+            ref_path = safe_rel_path(folder_path, rel_path)
             ref_path.parent.mkdir(parents=True, exist_ok=True)
             ref_path.write_text(content)
         ref_count = len(sf.supplementary_files)
@@ -383,7 +383,7 @@ def _run_team(jd_file: Path, opts: dict) -> dict:
         tm_dir.mkdir(exist_ok=True)
         (tm_dir / "SKILL.md").write_text(ft.skill_folder.skill_md)
         for rel_path, content in ft.skill_folder.supplementary_files.items():
-            ref_path = tm_dir / rel_path
+            ref_path = safe_rel_path(tm_dir, rel_path)
             ref_path.parent.mkdir(parents=True, exist_ok=True)
             ref_path.write_text(content)
         console.print(f"[green]Agent saved:[/green] {tm_dir}/SKILL.md ({ft.teammate.archetype})")
@@ -426,7 +426,7 @@ def _run_identity_import(identity_file: Path, opts: dict) -> dict:
     from agentforge.cli import _display_extraction, _make_client
     from agentforge.generation.identity_generator import IdentityGenerator
     from agentforge.generation.identity_loader import IdentityLoader
-    from agentforge.utils import safe_output_path
+    from agentforge.utils import safe_output_path, safe_rel_path
 
     console.print(f"[blue]Loading identity:[/blue] {identity_file}")
     loader = IdentityLoader()
@@ -462,7 +462,7 @@ def _run_identity_import(identity_file: Path, opts: dict) -> dict:
         folder_path.mkdir(exist_ok=True)
         (folder_path / "SKILL.md").write_text(sf.skill_md_with_references())
         for rel_path, content in sf.supplementary_files.items():
-            ref_path = folder_path / rel_path
+            ref_path = safe_rel_path(folder_path, rel_path)
             ref_path.parent.mkdir(parents=True, exist_ok=True)
             ref_path.write_text(content)
         console.print(f"[green]Claude Code skill saved:[/green] {folder_path}/")
@@ -494,7 +494,7 @@ def _refine_loop(context: dict) -> dict:
     """Interactive refinement loop using SkillRefiner."""
     from agentforge.analysis.skill_refiner import SkillRefiner
     from agentforge.generation.skill_folder import SkillFolderGenerator
-    from agentforge.utils import safe_output_path
+    from agentforge.utils import safe_output_path, safe_rel_path
 
     refiner = SkillRefiner()
     sf_gen = SkillFolderGenerator()
@@ -577,7 +577,7 @@ def _refine_loop(context: dict) -> dict:
         folder_path.mkdir(exist_ok=True)
         (folder_path / "SKILL.md").write_text(sf.skill_md_with_references())
         for rel_path, content in sf.supplementary_files.items():
-            ref_path = folder_path / rel_path
+            ref_path = safe_rel_path(folder_path, rel_path)
             ref_path.parent.mkdir(parents=True, exist_ok=True)
             ref_path.write_text(content)
 

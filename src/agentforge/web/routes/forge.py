@@ -15,7 +15,7 @@ from typing import Any
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import PlainTextResponse, StreamingResponse
 
-from agentforge.utils import safe_filename
+from agentforge.utils import safe_filename, safe_rel_path
 from agentforge.web.jobs import Job, JobStore
 
 router = APIRouter(tags=["forge"])
@@ -196,7 +196,8 @@ def _run_forge(
 
     except Exception as exc:
         logging.getLogger(__name__).exception("Forge pipeline failed")
-        job.emit_error(f"Pipeline failed: {exc}")
+        logging.getLogger(__name__).exception("Forge pipeline failed")
+        job.emit_error("Pipeline failed: an internal error occurred")
     finally:
         file_path.unlink(missing_ok=True)
         if culture_path:
@@ -245,7 +246,8 @@ async def import_identity(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     except Exception as exc:
-        raise HTTPException(status_code=422, detail=f"Failed to parse identity: {exc}")
+        logging.getLogger(__name__).exception("Failed to parse identity")
+        raise HTTPException(status_code=422, detail="Failed to parse identity file")
 
     # Regenerate identity (round-trip validates and normalizes)
     generator = IdentityGenerator()
@@ -394,6 +396,9 @@ async def start_forge(
 
     # Save uploaded file
     content = await file.read()
+    _MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
+    if len(content) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File too large (max 20 MB)")
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
     tmp.write(content)
     tmp.close()
@@ -470,7 +475,8 @@ async def forge_download_zip(job_id: str, request: Request) -> StreamingResponse
     if not sf_data:
         raise HTTPException(status_code=404, detail="No skill folder available")
 
-    skill_name = sf_data.get("skill_name", "skill")
+    raw_skill_name = sf_data.get("skill_name", "skill")
+    skill_name = safe_filename(raw_skill_name) or "skill"
     source = job.result.get("source_filename", "")
     zip_name = source or safe_filename(skill_name)[:100] or "skill"
 
@@ -481,7 +487,13 @@ async def forge_download_zip(job_id: str, request: Request) -> StreamingResponse
 
         # Supplementary reference files
         for rel_path, content in sf_data.get("supplementary_files", {}).items():
-            zf.writestr(f"{skill_name}/{rel_path}", content)
+            safe_entry = f"{skill_name}/{safe_filename(Path(rel_path).name)}"
+            # Preserve subdirectory structure safely
+            parts = Path(rel_path).parts
+            if len(parts) > 1:
+                safe_parts = [safe_filename(p) for p in parts]
+                safe_entry = f"{skill_name}/{'/'.join(safe_parts)}"
+            zf.writestr(safe_entry, content)
 
         # ClawHub skill if available
         ch_data = job.result.get("clawhub_skill")

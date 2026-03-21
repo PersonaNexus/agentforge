@@ -201,28 +201,44 @@ def _do_forge(args: dict) -> dict:
     if inp.user_frameworks:
         context["user_frameworks"] = inp.user_frameworks
 
+    culture_tmp_path = None
     if inp.culture_yaml:
         import tempfile
 
         tmp = tempfile.NamedTemporaryFile(suffix=".yaml", mode="w", delete=False)
         tmp.write(inp.culture_yaml)
         tmp.close()
-        context["culture_path"] = tmp.name
+        culture_tmp_path = tmp.name
+        context["culture_path"] = culture_tmp_path
 
-    # Skip ingest since we already have the JD
-    pipeline.skip_stage("ingest")
-    context = pipeline.run(context)
+    try:
+        # Skip ingest since we already have the JD
+        pipeline.skip_stage("ingest")
+        context = pipeline.run(context)
 
-    return _context_to_result(context)
+        return _context_to_result(context)
+    finally:
+        if culture_tmp_path:
+            Path(culture_tmp_path).unlink(missing_ok=True)
+
+
+_ALLOWED_MCP_EXTENSIONS = {".txt", ".md", ".markdown", ".pdf", ".docx"}
 
 
 def _do_forge_file(args: dict) -> dict:
     inp = ForgeFileInput(**args)
     from agentforge.pipeline.forge_pipeline import ForgePipeline
 
-    path = Path(inp.jd_path)
+    path = Path(inp.jd_path).resolve()
     if not path.exists():
         raise FileNotFoundError(f"File not found: {inp.jd_path}")
+
+    # Restrict to allowed file extensions to prevent arbitrary file reads
+    if path.suffix.lower() not in _ALLOWED_MCP_EXTENSIONS:
+        raise ValueError(
+            f"Unsupported file type: {path.suffix}. "
+            f"Allowed: {', '.join(sorted(_ALLOWED_MCP_EXTENSIONS))}"
+        )
 
     if inp.quick:
         pipeline = ForgePipeline.quick()

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -60,4 +61,19 @@ def safe_output_path(output_dir: Path, filename: str) -> Path:
     output_resolved = output_dir.resolve()
     if not str(target).startswith(str(output_resolved)):
         raise ValueError(f"Path traversal detected: {filename!r} escapes {output_dir}")
+    return target
+
+
+def safe_rel_path(base_dir: Path, rel_path: str) -> Path:
+    """Resolve a relative path safely within base_dir, preventing path traversal.
+
+    Raises ValueError if the resolved path escapes base_dir.
+    """
+    # Sanitize each component of the relative path
+    parts = Path(rel_path).parts
+    clean_parts = [safe_filename(p) for p in parts]
+    target = (base_dir / Path(*clean_parts)).resolve()
+    base_resolved = base_dir.resolve()
+    if not str(target).startswith(str(base_resolved) + os.sep) and target != base_resolved:
+        raise ValueError(f"Path traversal detected: {rel_path!r} escapes {base_dir}")
     return target

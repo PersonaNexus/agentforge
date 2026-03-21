@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agentforge.utils import safe_filename, safe_output_path
+from agentforge.utils import safe_filename, safe_output_path, safe_rel_path
 
 
 class TestAPIKeyValidation:
@@ -172,6 +172,49 @@ class TestPathTraversal:
     def test_safe_output_stays_in_dir(self, tmp_path):
         path = safe_output_path(tmp_path, "normal_agent.yaml")
         assert path.parent == tmp_path
+
+    def test_safe_rel_path_normal(self, tmp_path):
+        """Normal relative paths should resolve within base_dir."""
+        tmp_path.mkdir(exist_ok=True)
+        result = safe_rel_path(tmp_path, "instructions/voice.md")
+        assert str(result).startswith(str(tmp_path.resolve()))
+        assert result.name == "voice.md"
+
+    def test_safe_rel_path_traversal_blocked(self, tmp_path):
+        """Path traversal in rel_path should be blocked."""
+        tmp_path.mkdir(exist_ok=True)
+        # safe_rel_path sanitizes each component, so ../../ gets stripped
+        result = safe_rel_path(tmp_path, "../../etc/passwd")
+        assert str(result).startswith(str(tmp_path.resolve()))
+
+    def test_safe_rel_path_backslash_traversal(self, tmp_path):
+        """Backslash traversal should be sanitized."""
+        tmp_path.mkdir(exist_ok=True)
+        result = safe_rel_path(tmp_path, "..\\..\\windows\\system32")
+        assert str(result).startswith(str(tmp_path.resolve()))
+
+
+class TestMCPPathValidation:
+    def test_mcp_rejects_non_jd_extensions(self):
+        """MCP forge_file should reject non-JD file types."""
+        from agentforge.mcp_server import _ALLOWED_MCP_EXTENSIONS
+
+        assert ".py" not in _ALLOWED_MCP_EXTENSIONS
+        assert ".yaml" not in _ALLOWED_MCP_EXTENSIONS
+        assert ".txt" in _ALLOWED_MCP_EXTENSIONS
+        assert ".pdf" in _ALLOWED_MCP_EXTENSIONS
+        assert ".docx" in _ALLOWED_MCP_EXTENSIONS
+
+
+class TestUploadSizeLimits:
+    def test_extract_route_has_size_check(self):
+        """Verify the extract route enforces upload size limits."""
+        import inspect
+        from agentforge.web.routes.extract import extract
+
+        source = inspect.getsource(extract)
+        assert "_MAX_UPLOAD_BYTES" in source
+        assert "413" in source
 
 
 class TestInputValidation:

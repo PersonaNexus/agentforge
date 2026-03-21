@@ -28,6 +28,9 @@ async def extract(
         raise HTTPException(status_code=422, detail=f"Unsupported file type: {suffix}")
 
     content = await file.read()
+    _MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
+    if len(content) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File too large (max 20 MB)")
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         tmp.write(content)
@@ -82,6 +85,7 @@ async def extract(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logging.getLogger(__name__).exception("Extraction failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
     finally:
         tmp_path.unlink(missing_ok=True)

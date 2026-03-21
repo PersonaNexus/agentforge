@@ -81,6 +81,9 @@ async def culture_parse(
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        logging.getLogger(__name__).exception("Culture profile parsing failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
     finally:
         tmp_path.unlink(missing_ok=True)
 
@@ -108,5 +111,8 @@ async def culture_to_mixin(file: UploadFile = File(...)) -> dict:
         return {"mixin_yaml": mixin_yaml}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        logging.getLogger(__name__).exception("Culture mixin conversion failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
     finally:
         tmp_path.unlink(missing_ok=True)

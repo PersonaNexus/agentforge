@@ -13,7 +13,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from agentforge.models.extracted_skills import ExtractionResult
-from agentforge.utils import safe_output_path
+from agentforge.utils import safe_output_path, safe_rel_path
 
 app = typer.Typer(
     name="agentforge",
@@ -439,7 +439,7 @@ def forge(
 
         # Write supplementary reference files
         for rel_path, content in sf.supplementary_files.items():
-            ref_path = folder_path / rel_path
+            ref_path = safe_rel_path(folder_path, rel_path)
             ref_path.parent.mkdir(parents=True, exist_ok=True)
             ref_path.write_text(content)
 
@@ -454,7 +454,7 @@ def forge(
     if "openclaw_output" in context:
         oc = context["openclaw_output"]
         for rel_path, content in oc.file_map().items():
-            out_path = output_dir / rel_path
+            out_path = safe_rel_path(output_dir, rel_path)
             out_path.parent.mkdir(parents=True, exist_ok=True)
             out_path.write_text(content)
         console.print(
