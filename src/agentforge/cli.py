@@ -12,6 +12,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from agentforge.config import DEFAULT_MODEL
 from agentforge.models.extracted_skills import ExtractionResult
 from agentforge.utils import safe_output_path, safe_rel_path
 
@@ -107,7 +108,7 @@ def extract(
     output: Path | None = typer.Option(None, "--output", "-o", help="Output file path"),
     format: str = typer.Option("yaml", "--format", "-f", help="Output format: yaml or json"),
     model: str = typer.Option(
-        "claude-sonnet-4-20250514", "--model", "-m", help="Claude model to use"
+        DEFAULT_MODEL, "--model", "-m", help="LLM model to use (supports Claude and OpenAI models)"
     ),
     quiet: bool = typer.Option(False, "--quiet", "-q", help="Suppress display output"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging"),
@@ -173,7 +174,7 @@ def forge(
         Path("."), "--output-dir", "-d", help="Directory for output files"
     ),
     model: str = typer.Option(
-        "claude-sonnet-4-20250514", "--model", "-m", help="Claude model to use"
+        DEFAULT_MODEL, "--model", "-m", help="LLM model to use (supports Claude and OpenAI models)"
     ),
     quick_mode: bool = typer.Option(
         False, "--quick", help="Quick mode: skip culture, mapping, and gap analysis"
@@ -254,6 +255,10 @@ def forge(
         console.print(f"[red]Error:[/red] Culture file not found: {culture}")
         raise typer.Exit(code=1)
 
+    if quick_mode and deep:
+        console.print("[red]Error:[/red] --quick and --deep cannot be used together.")
+        raise typer.Exit(code=1)
+
     if examples and not examples.exists():
         console.print(f"[red]Error:[/red] Examples file not found: {examples}")
         raise typer.Exit(code=1)
@@ -327,6 +332,13 @@ def forge(
         console.print(f"[blue]Target:[/blue] OpenClaw")
     if supplement:
         context["supplementary_sources"] = [str(s) for s in supplement]
+
+    # Warn if using a non-Claude model — skill folder output is Claude Code-specific
+    if not model.startswith("claude"):
+        console.print(
+            "[yellow]Note:[/yellow] Skill folder output uses Claude Code format "
+            "(.claude/skills/). It may not be directly usable with non-Claude models."
+        )
 
     console.print(f"[blue]Forging agent from:[/blue] {jd_file}")
 
@@ -648,7 +660,7 @@ def culture_parse(
     culture_file: Path = typer.Argument(..., help="Culture file (YAML or markdown)"),
     output: Path | None = typer.Option(None, "--output", "-o", help="Output YAML file"),
     model: str = typer.Option(
-        "claude-sonnet-4-20250514", "--model", "-m", help="Claude model (for markdown parsing)"
+        DEFAULT_MODEL, "--model", "-m", help="LLM model for markdown parsing"
     ),
 ) -> None:
     """Parse a culture document into a structured CultureProfile.
@@ -769,7 +781,7 @@ def batch(
     ),
     parallel: int = typer.Option(1, "--parallel", "-p", help="Number of parallel workers"),
     model: str = typer.Option(
-        "claude-sonnet-4-20250514", "--model", "-m", help="Claude model to use"
+        DEFAULT_MODEL, "--model", "-m", help="LLM model to use (supports Claude and OpenAI models)"
     ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable debug logging"),
 ) -> None:

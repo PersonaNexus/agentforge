@@ -102,7 +102,12 @@ class ForgePipeline:
 
     @classmethod
     def deep_analysis(cls) -> "ForgePipeline":
-        """Deep analysis pipeline with per-skill scoring and priority ranking."""
+        """Deep analysis pipeline with per-skill scoring and priority ranking.
+
+        Runs DeepAnalyzeStage *before* GenerateStage so that per-skill scores
+        and gap data are available in the generation context, enabling richer
+        personality and skill-file output.
+        """
         pipeline = cls()
         pipeline.add_stage(IngestStage())
         pipeline.add_stage(AnonymizeStage())
@@ -110,9 +115,9 @@ class ForgePipeline:
         pipeline.add_stage(MethodologyStage())
         pipeline.add_stage(MapStage())
         pipeline.add_stage(CultureStage())
+        pipeline.add_stage(DeepAnalyzeStage())
         pipeline.add_stage(GenerateStage())
         pipeline.add_stage(ToolMapStage())
-        pipeline.add_stage(DeepAnalyzeStage())
         pipeline.add_stage(TeamComposeStage())
         return pipeline
 

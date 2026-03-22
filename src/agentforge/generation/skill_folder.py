@@ -117,6 +117,7 @@ class SkillFolderGenerator:
         methodology: MethodologyExtraction | None = None,
         user_examples: str = "",
         user_frameworks: str = "",
+        skill_scores: list[dict] | None = None,
     ) -> SkillFolderResult:
         """Generate a skill folder from extraction results.
 
@@ -127,6 +128,7 @@ class SkillFolderGenerator:
             methodology: Optional extracted methodology (heuristics, templates, etc).
             user_examples: Optional user-provided work samples.
             user_frameworks: Optional user-provided frameworks.
+            skill_scores: Optional per-skill scores from deep analysis.
 
         Returns:
             SkillFolderResult with skill_name, orchestrator SKILL.md,
@@ -140,7 +142,7 @@ class SkillFolderGenerator:
             user_examples, user_frameworks,
         )
 
-        return SkillFolderResult(
+        result = SkillFolderResult(
             skill_name=skill_name,
             skill_md=self._render_skill_md(
                 extraction, identity, jd, skill_name,
@@ -148,6 +150,35 @@ class SkillFolderGenerator:
             ),
             supplementary_files=supplementary,
         )
+
+        # When deep-analysis skill scores are available, attach a supplementary
+        # coverage report so the skill folder carries the analysis data.
+        if skill_scores:
+            result.supplementary_files["references/coverage-analysis.md"] = (
+                self._render_coverage_report(skill_scores)
+            )
+
+        return result
+
+    @staticmethod
+    def _render_coverage_report(skill_scores: list[dict]) -> str:
+        """Render deep-analysis skill scores as a markdown reference file."""
+        lines = [
+            "# Skill Coverage Analysis",
+            "",
+            "Per-skill automation coverage scores from deep analysis.",
+            "",
+            "| Skill | Category | Proficiency | Score | Priority |",
+            "|-------|----------|-------------|-------|----------|",
+        ]
+        for entry in skill_scores:
+            score_pct = f"{int(entry['score'] * 100)}%"
+            lines.append(
+                f"| {entry['skill']} | {entry['category']} | "
+                f"{entry.get('proficiency', 'n/a')} | {score_pct} | {entry['priority']} |"
+            )
+        lines.append("")
+        return "\n".join(lines)
 
     # ------------------------------------------------------------------
     # Supplementary file builders

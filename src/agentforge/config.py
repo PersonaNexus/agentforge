@@ -10,6 +10,13 @@ from pydantic import BaseModel, Field
 _CONFIG_DIR = Path.home() / ".agentforge"
 _CONFIG_FILE = _CONFIG_DIR / "config.yaml"
 
+# Single source of truth for default models per provider.
+DEFAULT_MODELS: dict[str, str] = {
+    "anthropic": "claude-sonnet-4-20250514",
+    "openai": "gpt-4o",
+}
+DEFAULT_MODEL = DEFAULT_MODELS["anthropic"]
+
 
 class AgentForgeConfig(BaseModel):
     """AgentForge configuration model."""
@@ -19,7 +26,7 @@ class AgentForgeConfig(BaseModel):
         default="auto",
         description="LLM provider: 'auto' (detect from key), 'anthropic', or 'openai'",
     )
-    default_model: str = "claude-sonnet-4-20250514"
+    default_model: str = DEFAULT_MODEL
     output_dir: str = "."
     default_culture: str | None = None
     batch_parallel: int = Field(default=1, ge=1)

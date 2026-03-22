@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from agentforge.config import DEFAULT_MODEL
 from agentforge.llm.client import _detect_provider
 
 router = APIRouter(tags=["settings"])
@@ -22,7 +23,7 @@ class SettingsResponse(BaseModel):
 class SettingsUpdate(BaseModel):
     api_key: str = ""
     provider: str = "auto"
-    default_model: str = "claude-sonnet-4-20250514"
+    default_model: str = DEFAULT_MODEL
     output_dir: str = "."
     default_culture: str | None = None
     batch_parallel: int = 1

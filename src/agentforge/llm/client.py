@@ -19,18 +19,18 @@ logger = logging.getLogger(__name__)
 _MAX_RETRIES = 3
 _RETRY_BASE_DELAY = 1.0  # seconds
 
-# Default models per provider
-_DEFAULT_MODELS = {
-    "anthropic": "claude-sonnet-4-20250514",
-    "openai": "gpt-4o",
-}
-
 
 def _detect_provider(api_key: str) -> str:
-    """Detect LLM provider from API key prefix."""
+    """Detect LLM provider from API key prefix.
+
+    Returns 'anthropic', 'openai', or 'unknown' if the key format is
+    not recognized.  Callers should handle the 'unknown' case.
+    """
     if api_key.startswith("sk-ant-"):
         return "anthropic"
-    return "openai"
+    if api_key.startswith("sk-"):
+        return "openai"
+    return "unknown"
 
 
 def _resolve_key_and_provider(
@@ -87,6 +87,8 @@ class LLMClient:
         model: str | None = None,
         provider: str | None = None,
     ):
+        from agentforge.config import DEFAULT_MODELS
+
         resolved_key, resolved_provider = _resolve_key_and_provider(api_key, provider)
 
         if not resolved_key:
@@ -95,8 +97,16 @@ class LLMClient:
                 "or run `agentforge init` to configure."
             )
 
+        # Fall back to 'anthropic' when provider is unknown so we don't send
+        # a Claude model name to an unrecognised API.
+        if resolved_provider == "unknown":
+            logger.warning(
+                "Could not detect LLM provider from API key — defaulting to 'anthropic'."
+            )
+            resolved_provider = "anthropic"
+
         self.provider = resolved_provider
-        self.model = model or _DEFAULT_MODELS.get(self.provider, "claude-sonnet-4-20250514")
+        self.model = model or DEFAULT_MODELS.get(self.provider, DEFAULT_MODELS["anthropic"])
 
         if self.provider == "openai":
             self._openai_client = openai.OpenAI(api_key=resolved_key)

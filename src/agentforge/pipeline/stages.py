@@ -170,6 +170,7 @@ class GenerateStage(PipelineStage):
                 methodology=context.get("methodology"),
                 user_examples=context.get("user_examples", ""),
                 user_frameworks=context.get("user_frameworks", ""),
+                skill_scores=context.get("skill_scores"),
             )
 
         # ClawHub skill

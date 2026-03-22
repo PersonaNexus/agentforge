@@ -14,6 +14,7 @@ from typing import Any
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import PlainTextResponse, StreamingResponse
 
+from agentforge.config import DEFAULT_MODEL
 from agentforge.utils import safe_filename, safe_rel_path
 from agentforge.web.jobs import Job, JobStore
 
@@ -358,7 +359,7 @@ async def start_forge(
     request: Request,
     file: UploadFile = File(...),
     mode: str = Form("default"),
-    model: str = Form("claude-sonnet-4-20250514"),
+    model: str = Form(DEFAULT_MODEL),
     culture_file: UploadFile | None = File(None),
     trait_overrides: str = Form(""),
     user_examples: str = Form(""),
