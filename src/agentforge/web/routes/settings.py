@@ -98,4 +98,4 @@ async def validate_key(data: ValidateKeyRequest) -> dict:
             )
         return {"valid": True, "provider": provider}
     except Exception as e:
-        return {"valid": False, "provider": provider, "error": str(e)}
+        return {"valid": False, "provider": provider, "error": "Key validation failed"}

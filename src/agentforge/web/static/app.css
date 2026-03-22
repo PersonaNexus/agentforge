@@ -818,6 +818,44 @@
     align-items: center;
     margin-top: 1.5rem;
 }
+.forge-import-divider {
+    text-align: center;
+    margin: 1.5rem 0;
+    position: relative;
+}
+.forge-import-divider::before,
+.forge-import-divider::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    width: 40%;
+    height: 1px;
+    background: var(--pico-muted-border-color);
+}
+.forge-import-divider::before { left: 0; }
+.forge-import-divider::after { right: 0; }
+.forge-import-divider span {
+    background: var(--pico-background-color);
+    padding: 0 1rem;
+    color: var(--pico-muted-color);
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.forge-import-section {
+    text-align: center;
+    padding: 1rem 0 0;
+}
+.forge-import-section h4 { margin-bottom: 0.25rem; }
+.forge-import-section p { font-size: 0.85rem; opacity: 0.7; margin-bottom: 0.75rem; }
+.forge-import-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+}
+.forge-import-btn { margin: 0; }
+.forge-import-filename { font-size: 0.85rem; font-weight: 600; }
 .wizard-next-btn,
 .wizard-back-btn {
     cursor: pointer;
@@ -1349,4 +1387,235 @@
     .trait-bar-track {
         flex: 1;
     }
+}
+
+/* ========== AGENT TOOLS TAB ========== */
+.tools-job-selector {
+    display: flex;
+    gap: 1rem;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    margin-bottom: 1.5rem;
+}
+
+.tools-job-selector label {
+    flex: 1;
+    min-width: 200px;
+}
+
+.tools-job-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    padding-bottom: 0.25rem;
+}
+
+.tools-section {
+    margin-bottom: 1.5rem;
+}
+
+.tools-section-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.tools-section-title .tools-count {
+    font-size: 0.8rem;
+    font-weight: normal;
+    background: var(--af-blue);
+    color: var(--af-text-on-color);
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+}
+
+/* Tool cards grid */
+.tools-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 0.75rem;
+}
+
+.tool-card {
+    border: 1px solid var(--pico-muted-border-color);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    position: relative;
+}
+
+.tool-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 0.5rem;
+}
+
+.tool-card-name {
+    font-weight: 600;
+    font-family: monospace;
+    font-size: 0.95rem;
+}
+
+.tool-card-priority {
+    font-size: 0.7rem;
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.tool-card-priority.required { background: var(--af-red); color: var(--af-text-on-color); }
+.tool-card-priority.recommended { background: var(--af-blue); color: var(--af-text-on-color); }
+.tool-card-priority.optional { background: var(--af-yellow); color: var(--af-text-on-yellow); }
+
+.tool-card-desc {
+    font-size: 0.85rem;
+    margin-bottom: 0.5rem;
+    opacity: 0.85;
+}
+
+.tool-card-meta {
+    font-size: 0.75rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.tool-card-badge {
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    background: var(--pico-muted-border-color);
+    font-family: monospace;
+}
+
+.tool-card-badge.cat-file_io { border-left: 3px solid var(--af-blue); }
+.tool-card-badge.cat-code_execution { border-left: 3px solid var(--af-green); }
+.tool-card-badge.cat-data_query { border-left: 3px solid var(--af-purple); }
+.tool-card-badge.cat-web_search { border-left: 3px solid var(--af-cyan); }
+.tool-card-badge.cat-communication { border-left: 3px solid var(--af-orange); }
+.tool-card-badge.cat-analysis { border-left: 3px solid var(--af-yellow); }
+.tool-card-badge.cat-generation { border-left: 3px solid var(--af-green-dark); }
+.tool-card-badge.cat-deployment { border-left: 3px solid var(--af-red); }
+.tool-card-badge.cat-monitoring { border-left: 3px solid var(--af-cyan); }
+
+.tool-card-skills {
+    margin-top: 0.5rem;
+    font-size: 0.75rem;
+    opacity: 0.7;
+}
+
+/* Workflow cards */
+.workflow-card {
+    border: 1px solid var(--pico-muted-border-color);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+}
+
+.workflow-card-title {
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+}
+
+.workflow-card-trigger {
+    font-size: 0.85rem;
+    opacity: 0.75;
+    margin-bottom: 0.75rem;
+    font-style: italic;
+}
+
+.workflow-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+.workflow-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.4rem 0;
+}
+
+.workflow-step-num {
+    flex-shrink: 0;
+    width: 1.5rem;
+    height: 1.5rem;
+    border-radius: 50%;
+    background: var(--af-blue);
+    color: var(--af-text-on-color);
+    font-size: 0.75rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.workflow-step-tool {
+    font-family: monospace;
+    font-weight: 600;
+    font-size: 0.85rem;
+}
+
+.workflow-step-action {
+    font-size: 0.85rem;
+}
+
+.workflow-step-io {
+    font-size: 0.75rem;
+    opacity: 0.7;
+}
+
+.workflow-step-connector {
+    width: 2px;
+    height: 0.5rem;
+    background: var(--pico-muted-border-color);
+    margin-left: 0.7rem;
+}
+
+/* MCP config preview */
+.mcp-config-preview {
+    background: var(--pico-code-background-color);
+    border-radius: 8px;
+    padding: 1rem;
+    overflow-x: auto;
+    position: relative;
+}
+
+.mcp-config-preview pre {
+    margin: 0;
+    white-space: pre-wrap;
+    font-size: 0.85rem;
+}
+
+.mcp-config-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+}
+
+/* Filter bar */
+.tools-filter-bar {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.tools-filter-chip {
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    border: 1px solid var(--pico-muted-border-color);
+    font-size: 0.8rem;
+    cursor: pointer;
+    background: none;
+}
+
+.tools-filter-chip.active {
+    background: var(--af-blue);
+    color: var(--af-text-on-color);
+    border-color: var(--af-blue);
 }

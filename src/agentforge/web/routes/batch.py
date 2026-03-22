@@ -5,7 +5,6 @@ from __future__ import annotations
 import io
 import json
 import tempfile
-import threading
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -13,6 +12,7 @@ from typing import Any
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 
+from agentforge.utils import safe_filename
 from agentforge.web.jobs import Job, JobStore
 
 router = APIRouter(tags=["batch"])
@@ -30,6 +30,8 @@ def _run_batch(
     model: str,
     parallel: int,
     culture_path: Path | None,
+    user_examples: str = "",
+    user_frameworks: str = "",
 ) -> None:
     """Worker thread: processes multiple JDs and emits SSE progress events."""
     try:
@@ -43,6 +45,10 @@ def _run_batch(
         shared_context: dict[str, Any] = {"llm_client": client}
         if culture_path:
             shared_context["culture_path"] = str(culture_path)
+        if user_examples:
+            shared_context["user_examples"] = user_examples
+        if user_frameworks:
+            shared_context["user_frameworks"] = user_frameworks
 
         pipeline = ForgePipeline.default()
         processor = BatchProcessor(pipeline=pipeline, parallel=parallel)
@@ -75,23 +81,27 @@ def _run_batch(
                 entry["skills_count"] = len(bp.extraction.skills)
                 entry["coverage"] = int(bp.coverage_score * 100)
                 # Store output files
-                agent_id = bp.extraction.role.title.lower().replace(" ", "_")
+                agent_id = safe_filename(bp.extraction.role.title.lower().replace(" ", "_"))
                 yaml_name = f"{agent_id}.yaml"
                 output_files[yaml_name] = bp.identity_yaml
                 if bp.skill_file:
                     output_files[f"{agent_id}_SKILL.md"] = bp.skill_file
                 if bp.skill_folder:
-                    skill_name = bp.skill_folder.skill_name
+                    skill_name = safe_filename(bp.skill_folder.skill_name)
                     output_files[f"{skill_name}/SKILL.md"] = bp.skill_folder.skill_md
                     for rel_path, content in bp.skill_folder.supplementary_files.items():
-                        output_files[f"{skill_name}/{rel_path}"] = content
+                        safe_parts = [safe_filename(p) for p in Path(rel_path).parts]
+                        safe_rel = "/".join(safe_parts)
+                        output_files[f"{skill_name}/{safe_rel}"] = content
 
             results_data.append(entry)
 
         job.emit_done({"results": results_data, "files": output_files})
 
     except Exception as e:
-        job.emit_error(str(e))
+        import logging
+        logging.getLogger(__name__).exception("Batch processing failed")
+        job.emit_error("Batch processing failed: an internal error occurred")
     finally:
         for fp in file_paths:
             fp.unlink(missing_ok=True)
@@ -106,6 +116,8 @@ async def start_batch(
     model: str = Form("claude-sonnet-4-20250514"),
     parallel: int = Form(1),
     culture_file: UploadFile | None = File(None),
+    user_examples: str = Form(""),
+    user_frameworks: str = Form(""),
 ) -> dict:
     """Start a batch processing job."""
     if not files:
@@ -119,6 +131,9 @@ async def start_batch(
             raise HTTPException(status_code=422, detail=f"Unsupported file type: {suffix}")
 
         content = await f.read()
+        _MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
+        if len(content) > _MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail=f"File '{fname}' too large (max 20 MB)")
         tmp = tempfile.NamedTemporaryFile(
             delete=False, suffix=suffix, prefix=Path(fname).stem + "_"
         )
@@ -137,14 +152,18 @@ async def start_batch(
         culture_path = Path(ctmp.name)
 
     store = _get_store(request)
-    job = store.create()
-
-    thread = threading.Thread(
-        target=_run_batch,
-        args=(job, file_paths, model, max(1, parallel), culture_path),
-        daemon=True,
+    job = store.create(
+        job_type="batch",
+        source_filename=f"{len(file_paths)} files",
+        model=model,
     )
-    thread.start()
+
+    executor = request.app.state.executor
+    executor.submit(
+        _run_batch,
+        job, file_paths, model, max(1, parallel), culture_path,
+        user_examples=user_examples, user_frameworks=user_frameworks,
+    )
 
     return {"job_id": job.id}
 

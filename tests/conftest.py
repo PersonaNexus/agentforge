@@ -46,8 +46,11 @@ def sample_jd(sample_jd_text: str) -> JobDescription:
     )
 
 
-@pytest.fixture
-def sample_extraction() -> ExtractionResult:
+def _make_sample_extraction() -> ExtractionResult:
+    """Factory function for creating a sample ExtractionResult.
+
+    Can be called directly from tests or via the sample_extraction fixture.
+    """
     return ExtractionResult(
         role=ExtractedRole(
             title="Senior Data Engineer",
@@ -120,3 +123,8 @@ def sample_extraction() -> ExtractionResult:
         automation_potential=0.35,
         automation_rationale="Data pipeline design requires significant architectural judgment",
     )
+
+
+@pytest.fixture
+def sample_extraction() -> ExtractionResult:
+    return _make_sample_extraction()

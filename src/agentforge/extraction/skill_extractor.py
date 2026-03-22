@@ -14,9 +14,13 @@ class SkillExtractor:
     def __init__(self, client: LLMClient | None = None):
         self.client = client or LLMClient()
 
+    # Maximum characters of JD text to include in the prompt
+    _MAX_JD_CHARS = 50_000
+
     def extract(self, jd: JobDescription) -> ExtractionResult:
         """Extract skills and role information from a job description."""
-        prompt = EXTRACTION_PROMPT.format(jd_text=jd.full_text)
+        jd_text = jd.full_text[:self._MAX_JD_CHARS]
+        prompt = EXTRACTION_PROMPT.format(jd_text=jd_text)
 
         return self.client.extract_structured(
             prompt=prompt,

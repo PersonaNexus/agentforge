@@ -11,6 +11,7 @@ import yaml
 
 from agentforge.mapping.culture_mapper import CultureMixinConverter, CultureParser
 from agentforge.models.culture import CultureProfile, CultureValue
+from agentforge.models.tool_profile import AgentToolProfile
 from agentforge.pipeline.stages import CultureStage
 
 
@@ -385,7 +386,7 @@ class TestCultureStage:
         pipeline = ForgePipeline.default()
         names = [s.name for s in pipeline.stages]
         assert "culture" in names
-        assert names == ["ingest", "anonymize", "extract", "methodology", "map", "culture", "generate", "analyze", "team_compose"]
+        assert names == ["ingest", "anonymize", "extract", "methodology", "map", "culture", "generate", "tool_map", "analyze", "team_compose"]
 
     def test_pipeline_with_culture_and_mocked_extraction(self, fixtures_dir):
         """Full pipeline with culture applied via mocked extraction."""
@@ -426,10 +427,14 @@ class TestCultureStage:
         mock_methodology_extractor = MagicMock()
         mock_methodology_extractor.extract.return_value = MethodologyExtraction()
 
+        mock_tool_mapper = MagicMock()
+        mock_tool_mapper.map_tools.return_value = AgentToolProfile()
+
         context = {
             "input_path": str(fixtures_dir / "customer_success_manager.txt"),
             "extractor": mock_extractor,
             "methodology_extractor": mock_methodology_extractor,
+            "tool_mapper": mock_tool_mapper,
             "culture_path": str(TEMPLATES_DIR / "customer_centric.yaml"),
         }
 

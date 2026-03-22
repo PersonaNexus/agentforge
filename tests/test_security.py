@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agentforge.utils import safe_filename, safe_output_path
+from agentforge.utils import safe_filename, safe_output_path, safe_rel_path
 
 
 class TestAPIKeyValidation:
@@ -172,6 +172,49 @@ class TestPathTraversal:
     def test_safe_output_stays_in_dir(self, tmp_path):
         path = safe_output_path(tmp_path, "normal_agent.yaml")
         assert path.parent == tmp_path
+
+    def test_safe_rel_path_normal(self, tmp_path):
+        """Normal relative paths should resolve within base_dir."""
+        tmp_path.mkdir(exist_ok=True)
+        result = safe_rel_path(tmp_path, "instructions/voice.md")
+        assert str(result).startswith(str(tmp_path.resolve()))
+        assert result.name == "voice.md"
+
+    def test_safe_rel_path_traversal_blocked(self, tmp_path):
+        """Path traversal in rel_path should be blocked."""
+        tmp_path.mkdir(exist_ok=True)
+        # safe_rel_path sanitizes each component, so ../../ gets stripped
+        result = safe_rel_path(tmp_path, "../../etc/passwd")
+        assert str(result).startswith(str(tmp_path.resolve()))
+
+    def test_safe_rel_path_backslash_traversal(self, tmp_path):
+        """Backslash traversal should be sanitized."""
+        tmp_path.mkdir(exist_ok=True)
+        result = safe_rel_path(tmp_path, "..\\..\\windows\\system32")
+        assert str(result).startswith(str(tmp_path.resolve()))
+
+
+class TestMCPPathValidation:
+    def test_mcp_rejects_non_jd_extensions(self):
+        """MCP forge_file should reject non-JD file types."""
+        from agentforge.mcp_server import _ALLOWED_MCP_EXTENSIONS
+
+        assert ".py" not in _ALLOWED_MCP_EXTENSIONS
+        assert ".yaml" not in _ALLOWED_MCP_EXTENSIONS
+        assert ".txt" in _ALLOWED_MCP_EXTENSIONS
+        assert ".pdf" in _ALLOWED_MCP_EXTENSIONS
+        assert ".docx" in _ALLOWED_MCP_EXTENSIONS
+
+
+class TestUploadSizeLimits:
+    def test_extract_route_has_size_check(self):
+        """Verify the extract route enforces upload size limits."""
+        import inspect
+        from agentforge.web.routes.extract import extract
+
+        source = inspect.getsource(extract)
+        assert "_MAX_UPLOAD_BYTES" in source
+        assert "413" in source
 
 
 class TestInputValidation:
@@ -418,3 +461,129 @@ class TestExtractStructured:
                 os.environ["ANTHROPIC_API_KEY"] = old_ant
             if old_oai is not None:
                 os.environ["OPENAI_API_KEY"] = old_oai
+
+
+class TestBearerAuthMiddleware:
+    def test_no_token_configured_allows_all(self):
+        """When no token is set, requests pass through."""
+        from agentforge.web.auth import _get_api_token
+
+        old = os.environ.pop("AGENTFORGE_API_TOKEN", None)
+        try:
+            with patch("agentforge.config.load_config") as mock_cfg:
+                mock_cfg.return_value = MagicMock(web_api_token=None)
+                token = _get_api_token()
+                assert token is None
+        finally:
+            if old is not None:
+                os.environ["AGENTFORGE_API_TOKEN"] = old
+
+    def test_env_token_used(self):
+        """Environment variable AGENTFORGE_API_TOKEN should be picked up."""
+        from agentforge.web.auth import _get_api_token
+
+        old = os.environ.get("AGENTFORGE_API_TOKEN")
+        os.environ["AGENTFORGE_API_TOKEN"] = "test-secret-123"
+        try:
+            token = _get_api_token()
+            assert token == "test-secret-123"
+        finally:
+            if old is not None:
+                os.environ["AGENTFORGE_API_TOKEN"] = old
+            else:
+                os.environ.pop("AGENTFORGE_API_TOKEN", None)
+
+    def test_disabled_token(self):
+        """Setting token to 'disabled' should return 'disabled'."""
+        from agentforge.web.auth import _get_api_token
+
+        old = os.environ.get("AGENTFORGE_API_TOKEN")
+        os.environ["AGENTFORGE_API_TOKEN"] = "disabled"
+        try:
+            token = _get_api_token()
+            assert token == "disabled"
+        finally:
+            if old is not None:
+                os.environ["AGENTFORGE_API_TOKEN"] = old
+            else:
+                os.environ.pop("AGENTFORGE_API_TOKEN", None)
+
+
+class TestRateLimiter:
+    def test_sliding_window_allows_under_limit(self):
+        """Requests under the limit should be allowed."""
+        from agentforge.web.rate_limit import _SlidingWindowCounter
+
+        limiter = _SlidingWindowCounter(max_requests=3, window_seconds=60)
+        assert limiter.is_allowed("client1") is True
+        assert limiter.is_allowed("client1") is True
+        assert limiter.is_allowed("client1") is True
+
+    def test_sliding_window_blocks_over_limit(self):
+        """Requests over the limit should be blocked."""
+        from agentforge.web.rate_limit import _SlidingWindowCounter
+
+        limiter = _SlidingWindowCounter(max_requests=2, window_seconds=60)
+        assert limiter.is_allowed("client1") is True
+        assert limiter.is_allowed("client1") is True
+        assert limiter.is_allowed("client1") is False
+
+    def test_sliding_window_per_client(self):
+        """Different clients should have independent limits."""
+        from agentforge.web.rate_limit import _SlidingWindowCounter
+
+        limiter = _SlidingWindowCounter(max_requests=1, window_seconds=60)
+        assert limiter.is_allowed("client1") is True
+        assert limiter.is_allowed("client2") is True
+        assert limiter.is_allowed("client1") is False
+
+    def test_cleanup_removes_stale_entries(self):
+        """Cleanup should remove entries past the window."""
+        from agentforge.web.rate_limit import _SlidingWindowCounter
+
+        limiter = _SlidingWindowCounter(max_requests=1, window_seconds=0)
+        limiter.is_allowed("client1")
+        limiter.cleanup()
+        assert "client1" not in limiter._requests
+
+
+class TestPromptInjectionDefenses:
+    def test_extraction_prompt_has_boundary_tags(self):
+        """Extraction prompt should use XML boundary tags for user content."""
+        from agentforge.extraction.prompts import EXTRACTION_PROMPT
+
+        assert "<job_description>" in EXTRACTION_PROMPT
+        assert "</job_description>" in EXTRACTION_PROMPT
+        assert "untrusted" in EXTRACTION_PROMPT.lower()
+
+    def test_methodology_prompt_has_boundary_tags(self):
+        """Methodology user context should use XML boundary tags."""
+        from agentforge.extraction.prompts import METHODOLOGY_USER_CONTEXT_WITH_EXAMPLES
+
+        assert "<user_examples>" in METHODOLOGY_USER_CONTEXT_WITH_EXAMPLES
+        assert "<user_frameworks>" in METHODOLOGY_USER_CONTEXT_WITH_EXAMPLES
+        assert "untrusted" in METHODOLOGY_USER_CONTEXT_WITH_EXAMPLES.lower()
+
+    def test_refine_prompt_has_boundary_tags(self):
+        """Refine prompt should use XML boundary tags for feedback."""
+        from agentforge.refinement.refiner import REFINE_PROMPT
+
+        assert "<user_feedback>" in REFINE_PROMPT
+        assert "</user_feedback>" in REFINE_PROMPT
+        assert "untrusted" in REFINE_PROMPT.lower()
+
+    def test_jd_text_truncated(self):
+        """SkillExtractor should truncate excessively long JD text."""
+        from agentforge.extraction.skill_extractor import SkillExtractor
+
+        assert SkillExtractor._MAX_JD_CHARS == 50_000
+
+
+class TestThreadPoolCap:
+    def test_app_has_executor(self):
+        """The app should have a bounded thread pool executor."""
+        from agentforge.web.app import create_app
+
+        app = create_app()
+        assert hasattr(app.state, "executor")
+        assert app.state.executor._max_workers <= 10  # reasonable cap

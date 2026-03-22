@@ -18,6 +18,7 @@
                 <li><a href="#forge" class="nav-link" data-tab="forge">Forge</a></li>
                 <li><a href="#batch" class="nav-link" data-tab="batch">Batch</a></li>
                 <li><a href="#culture" class="nav-link" data-tab="culture">Culture</a></li>
+                <li><a href="#tools" class="nav-link" data-tab="tools">Agent Tools</a></li>
                 <li><a href="#settings" class="nav-link" data-tab="settings">Settings</a></li>
                 <li><button id="theme-toggle" class="outline secondary theme-toggle-btn" title="Toggle dark mode">&#9789;</button></li>
             </ul>
@@ -129,6 +130,19 @@
                         <div class="wizard-nav">
                             <span></span>
                             <button type="button" class="wizard-next-btn" id="forge-next-1" disabled>Next: Configure &rarr;</button>
+                        </div>
+                        <div class="forge-import-divider">
+                            <span>or</span>
+                        </div>
+                        <div class="forge-import-section">
+                            <h4>Import Existing Identity</h4>
+                            <p>Have a PersonaNexus identity YAML? Import it to refine and re-export.</p>
+                            <div class="forge-import-row">
+                                <input type="file" accept=".yaml,.yml" id="forge-import-file" hidden>
+                                <button type="button" class="forge-import-btn secondary outline" id="forge-import-btn">Import Identity YAML</button>
+                                <span class="forge-import-filename" id="forge-import-filename"></span>
+                            </div>
+                            <div id="forge-import-status"></div>
                         </div>
                     </div>
 
@@ -337,6 +351,43 @@
                 <button type="submit">Convert to Mixin</button>
             </form>
             <div id="culture-mixin-results" class="results-area" hidden></div>
+        </section>
+
+        <!-- ===== AGENT TOOLS TAB ===== -->
+        <section id="tab-tools" class="tab-content" hidden>
+            <h2>Agent Tools</h2>
+            <p>View and configure which tools, MCP servers, and workflows your agent needs.</p>
+
+            <!-- Job selector -->
+            <div class="tools-job-selector">
+                <label>Select a completed forge job
+                    <select id="tools-job-select">
+                        <option value="">-- Select a forge job --</option>
+                    </select>
+                </label>
+                <div class="tools-job-actions">
+                    <button type="button" id="tools-generate-btn" class="secondary" disabled>Generate Tool Profile</button>
+                    <button type="button" id="tools-refresh-btn" class="outline secondary">Refresh Jobs</button>
+                </div>
+            </div>
+
+            <!-- Results area -->
+            <div id="tools-results" class="results-area" hidden>
+                <!-- Tool inventory -->
+                <div id="tools-inventory" class="tools-section"></div>
+
+                <!-- Usage patterns / workflows -->
+                <div id="tools-patterns" class="tools-section"></div>
+
+                <!-- MCP config export -->
+                <div id="tools-mcp-config" class="tools-section"></div>
+            </div>
+
+            <div id="tools-empty" class="empty-state">
+                <div class="empty-state-icon">&#128295;</div>
+                <div class="empty-state-title">No tool profile yet</div>
+                <div class="empty-state-text">Complete a forge job first, then select it here to generate or view the agent's tool profile.</div>
+            </div>
         </section>
 
         <!-- ===== SETTINGS TAB ===== -->

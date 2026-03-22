@@ -6,7 +6,6 @@ import io
 import json
 import logging
 import tempfile
-import threading
 import traceback
 import zipfile
 from pathlib import Path
@@ -16,7 +15,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import PlainTextResponse, StreamingResponse
 
 from agentforge.config import DEFAULT_MODEL
-from agentforge.utils import safe_filename
+from agentforge.utils import safe_filename, safe_rel_path
 from agentforge.web.jobs import Job, JobStore
 
 router = APIRouter(tags=["forge"])
@@ -33,12 +32,43 @@ _STAGE_MESSAGES = {
     "generate": "Generating agent identity...",
     "analyze": "Running gap analysis...",
     "deep_analyze": "Running deep gap analysis...",
+    "tool_map": "Mapping tools & workflows...",
     "team_compose": "Composing agent team...",
 }
 
 
 def _get_store(request: Request) -> JobStore:
     return request.app.state.jobs
+
+
+def _save_identity(
+    request: Request,
+    name: str,
+    identity_yaml: str,
+    source: str = "forge",
+    job_id: str | None = None,
+    extraction_json: dict | None = None,
+    methodology_json: dict | None = None,
+) -> None:
+    """Persist an identity to the database if available."""
+    session_factory = getattr(request.app.state, "db_session_factory", None)
+    if not session_factory:
+        return
+    try:
+        from agentforge.web.db.repository import IdentityRepository
+
+        with session_factory() as session:
+            repo = IdentityRepository(session)
+            repo.save(
+                name=name,
+                identity_yaml=identity_yaml,
+                source=source,
+                job_id=job_id,
+                extraction_json=extraction_json,
+                methodology_json=methodology_json,
+            )
+    except Exception:
+        logging.getLogger(__name__).exception("Failed to persist identity")
 
 
 def _run_forge(
@@ -142,6 +172,11 @@ def _run_forge(
             "skill_gaps": skill_gaps,
         }
 
+        # Tool profile
+        tool_profile = context.get("tool_profile")
+        if tool_profile:
+            result["tool_profile"] = tool_profile.model_dump(mode="json")
+
         # Store pipeline context for refinement (serializable copies)
         result["_refine_context"] = {
             "extraction": extraction.model_dump(mode="json") if extraction else None,
@@ -161,11 +196,162 @@ def _run_forge(
 
     except Exception as exc:
         logging.getLogger(__name__).exception("Forge pipeline failed")
-        job.emit_error(f"Pipeline failed: {exc}")
+        logging.getLogger(__name__).exception("Forge pipeline failed")
+        job.emit_error("Pipeline failed: an internal error occurred")
     finally:
         file_path.unlink(missing_ok=True)
         if culture_path:
             culture_path.unlink(missing_ok=True)
+
+
+@router.post("/forge/import-identity")
+async def import_identity(
+    request: Request,
+    file: UploadFile = File(...),
+    output_format: str = Form("claude_code"),
+    user_examples: str = Form(""),
+    user_frameworks: str = Form(""),
+) -> dict:
+    """Import an existing PersonaNexus identity YAML and prepare it for refinement.
+
+    Reverse-maps the identity to AgentForge models, generates skill files,
+    and returns a job pre-populated with the result — ready for the refine loop.
+    """
+    from agentforge.generation.identity_generator import IdentityGenerator
+    from agentforge.generation.identity_loader import IdentityLoader
+    from agentforge.generation.skill_folder import SkillFolderGenerator
+    from agentforge.analysis.skill_reviewer import SkillReviewer
+    from agentforge.models.extracted_skills import (
+        ExtractionResult,
+        MethodologyExtraction,
+    )
+
+    filename = file.filename or "identity.yaml"
+    suffix = Path(filename).suffix.lower()
+    if suffix not in (".yaml", ".yml"):
+        raise HTTPException(status_code=422, detail="Only YAML files are supported")
+
+    if output_format not in ("claude_code", "clawhub", "both"):
+        raise HTTPException(status_code=422, detail=f"Invalid output_format: {output_format}")
+
+    content = await file.read()
+    try:
+        yaml_str = content.decode("utf-8")
+    except UnicodeDecodeError:
+        raise HTTPException(status_code=422, detail="File is not valid UTF-8 text")
+
+    loader = IdentityLoader()
+    try:
+        extraction, methodology, original_yaml = loader.load_yaml(yaml_str)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:
+        logging.getLogger(__name__).exception("Failed to parse identity")
+        raise HTTPException(status_code=422, detail="Failed to parse identity file")
+
+    # Regenerate identity (round-trip validates and normalizes)
+    generator = IdentityGenerator()
+    identity, identity_yaml = generator.generate(extraction)
+
+    result_update: dict[str, Any] = {
+        "identity_yaml": identity_yaml,
+        "source_filename": safe_filename(Path(filename).stem)[:100] or "identity",
+    }
+
+    supplementary_files: dict[str, str] = {}
+
+    if output_format in ("claude_code", "both"):
+        skill_folder_gen = SkillFolderGenerator()
+        sf = skill_folder_gen.generate(
+            extraction, identity,
+            jd=None,
+            methodology=methodology,
+            user_examples=user_examples,
+            user_frameworks=user_frameworks,
+        )
+        supplementary_files = dict(sf.supplementary_files)
+        result_update["skill_folder"] = {
+            "skill_md": sf.skill_md_with_references(),
+            "skill_name": sf.skill_name,
+            "supplementary_files": supplementary_files,
+        }
+
+    if output_format in ("clawhub", "both"):
+        from agentforge.generation.clawhub_skill import ClawHubSkillGenerator
+
+        clawhub_gen = ClawHubSkillGenerator()
+        ch = clawhub_gen.generate(extraction, jd=None, methodology=methodology)
+        result_update["clawhub_skill"] = {
+            "skill_md": ch.skill_md,
+            "skill_name": ch.skill_name,
+        }
+
+    # Run skill quality review
+    reviewer = SkillReviewer()
+    skill_gaps = reviewer.review_to_dict(extraction, methodology=methodology)
+    result_update["skill_gaps"] = skill_gaps
+
+    # Store as a completed job so the refine loop works
+    store = _get_store(request)
+    job = store.create(
+        job_type="import",
+        source_filename=safe_filename(Path(filename).stem)[:100] or "identity",
+        output_format=output_format,
+    )
+    job.status = "done"
+
+    result_update["_refine_context"] = {
+        "extraction": extraction.model_dump(mode="json"),
+        "methodology": methodology.model_dump(mode="json") if methodology else None,
+        "identity_yaml": identity_yaml,
+        "output_format": output_format,
+        "user_examples": user_examples,
+        "user_frameworks": user_frameworks,
+        "supplementary_files": supplementary_files,
+    }
+
+    # Build a minimal blueprint for the frontend
+    from agentforge.models.blueprint import AgentBlueprint
+    from agentforge.models.job_description import JobDescription
+
+    placeholder_jd = JobDescription(
+        title=extraction.role.title,
+        raw_text=f"Imported from PersonaNexus identity: {extraction.role.title}",
+    )
+    blueprint = AgentBlueprint(
+        source_jd=placeholder_jd,
+        extraction=extraction,
+        identity_yaml=identity_yaml,
+        coverage_score=0.0,
+        coverage_gaps=[],
+        automation_estimate=extraction.automation_potential,
+    )
+    result_update["blueprint"] = blueprint.model_dump(mode="json")
+
+    job.result = result_update
+    store.persist_result(job)
+
+    # Persist identity to DB
+    _save_identity(
+        request,
+        name=extraction.role.title,
+        identity_yaml=identity_yaml,
+        source="import",
+        job_id=job.id,
+        extraction_json=extraction.model_dump(mode="json"),
+        methodology_json=methodology.model_dump(mode="json") if methodology else None,
+    )
+
+    return {
+        "job_id": job.id,
+        "result": {
+            "blueprint": result_update["blueprint"],
+            "identity_yaml": identity_yaml,
+            "skill_folder": result_update.get("skill_folder"),
+            "clawhub_skill": result_update.get("clawhub_skill"),
+            "skill_gaps": skill_gaps,
+        },
+    }
 
 
 @router.post("/forge", status_code=202)
@@ -210,6 +396,9 @@ async def start_forge(
 
     # Save uploaded file
     content = await file.read()
+    _MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20 MB
+    if len(content) > _MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File too large (max 20 MB)")
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
     tmp.write(content)
     tmp.close()
@@ -226,17 +415,22 @@ async def start_forge(
         culture_path = Path(ctmp.name)
 
     store = _get_store(request)
-    job = store.create()
+    job = store.create(
+        job_type="forge",
+        source_filename=safe_filename(filename)[:100] or "upload",
+        mode=mode,
+        model=model,
+        output_format=output_format,
+    )
 
     do_anonymize = anonymize.lower() in ("true", "1", "on", "yes")
 
-    thread = threading.Thread(
-        target=_run_forge,
-        args=(job, file_path, mode, model, culture_path, filename, parsed_traits,
-              user_examples, user_frameworks, output_format, do_anonymize),
-        daemon=True,
+    executor = request.app.state.executor
+    executor.submit(
+        _run_forge,
+        job, file_path, mode, model, culture_path, filename, parsed_traits,
+        user_examples, user_frameworks, output_format, do_anonymize,
     )
-    thread.start()
 
     return {"job_id": job.id}
 
@@ -266,6 +460,59 @@ async def forge_stream(job_id: str, request: Request) -> StreamingResponse:
                     break
 
     return StreamingResponse(_generate(), media_type="text/event-stream")
+
+
+@router.get("/forge/{job_id}/download/zip")
+async def forge_download_zip(job_id: str, request: Request) -> StreamingResponse:
+    """Download the skill folder as a ZIP with SKILL.md + reference files."""
+    store = _get_store(request)
+    job = store.get(job_id)
+    if not job or not job.result:
+        raise HTTPException(status_code=404, detail="Job not found or not complete")
+
+    sf_data = job.result.get("skill_folder")
+    if not sf_data:
+        raise HTTPException(status_code=404, detail="No skill folder available")
+
+    raw_skill_name = sf_data.get("skill_name", "skill")
+    skill_name = safe_filename(raw_skill_name) or "skill"
+    source = job.result.get("source_filename", "")
+    zip_name = source or safe_filename(skill_name)[:100] or "skill"
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        # Main SKILL.md
+        zf.writestr(f"{skill_name}/SKILL.md", sf_data["skill_md"])
+
+        # Supplementary reference files
+        for rel_path, content in sf_data.get("supplementary_files", {}).items():
+            safe_entry = f"{skill_name}/{safe_filename(Path(rel_path).name)}"
+            # Preserve subdirectory structure safely
+            parts = Path(rel_path).parts
+            if len(parts) > 1:
+                safe_parts = [safe_filename(p) for p in parts]
+                safe_entry = f"{skill_name}/{'/'.join(safe_parts)}"
+            zf.writestr(safe_entry, content)
+
+        # ClawHub skill if available
+        ch_data = job.result.get("clawhub_skill")
+        if ch_data:
+            zf.writestr(f"{skill_name}/CLAWHUB_SKILL.md", ch_data["skill_md"])
+
+        # Identity YAML
+        identity_yaml = job.result.get("identity_yaml", "")
+        if identity_yaml:
+            zf.writestr(f"{skill_name}/agent_identity.yaml", identity_yaml)
+
+    buffer.seek(0)
+
+    return StreamingResponse(
+        buffer,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{zip_name}_skill.zip"'
+        },
+    )
 
 
 @router.get("/forge/{job_id}/download/{file_type}")
@@ -308,52 +555,6 @@ async def forge_download(job_id: str, file_type: str, request: Request):
     )
 
 
-@router.get("/forge/{job_id}/download/zip")
-async def forge_download_zip(job_id: str, request: Request) -> StreamingResponse:
-    """Download the skill folder as a ZIP with SKILL.md + reference files."""
-    store = _get_store(request)
-    job = store.get(job_id)
-    if not job or not job.result:
-        raise HTTPException(status_code=404, detail="Job not found or not complete")
-
-    sf_data = job.result.get("skill_folder")
-    if not sf_data:
-        raise HTTPException(status_code=404, detail="No skill folder available")
-
-    skill_name = sf_data.get("skill_name", "skill")
-    source = job.result.get("source_filename", "")
-    zip_name = source or safe_filename(skill_name)[:100] or "skill"
-
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
-        # Main SKILL.md
-        zf.writestr(f"{skill_name}/SKILL.md", sf_data["skill_md"])
-
-        # Supplementary reference files
-        for rel_path, content in sf_data.get("supplementary_files", {}).items():
-            zf.writestr(f"{skill_name}/{rel_path}", content)
-
-        # ClawHub skill if available
-        ch_data = job.result.get("clawhub_skill")
-        if ch_data:
-            zf.writestr(f"{skill_name}/CLAWHUB_SKILL.md", ch_data["skill_md"])
-
-        # Identity YAML
-        identity_yaml = job.result.get("identity_yaml", "")
-        if identity_yaml:
-            zf.writestr(f"{skill_name}/agent_identity.yaml", identity_yaml)
-
-    buffer.seek(0)
-
-    return StreamingResponse(
-        buffer,
-        media_type="application/zip",
-        headers={
-            "Content-Disposition": f'attachment; filename="{zip_name}_skill.zip"'
-        },
-    )
-
-
 @router.post("/forge/{job_id}/refine")
 async def refine_skill(job_id: str, request: Request) -> dict:
     """Refine a generated skill by merging user edits into gap areas.
@@ -385,6 +586,7 @@ async def refine_skill(job_id: str, request: Request) -> dict:
 
     # Parse edits and files from either JSON or multipart form
     uploaded_files: dict[str, str] = {}
+    file_categories: list[str] = []
     content_type = request.headers.get("content-type", "")
 
     if "multipart/form-data" in content_type:
@@ -394,6 +596,14 @@ async def refine_skill(job_id: str, request: Request) -> dict:
             edits = json.loads(edits_raw)
         except (json.JSONDecodeError, TypeError):
             edits = {}
+        # Parse file categories (which gap categories have file attachments)
+        file_cats_raw = form.get("file_categories", "[]")
+        try:
+            file_categories = json.loads(file_cats_raw)
+            if not isinstance(file_categories, list):
+                file_categories = []
+        except (json.JSONDecodeError, TypeError):
+            file_categories = []
         # Read uploaded files
         for key in form:
             if key == "files":
@@ -428,8 +638,13 @@ async def refine_skill(job_id: str, request: Request) -> dict:
         uploaded_files=uploaded_files or None,
     )
 
-    # Accumulate supplementary files across refine cycles
-    existing_files: dict[str, str] = refine_ctx.get("supplementary_files", {})
+    # Accumulate supplementary files across refine cycles.  Seed from the
+    # skill folder's files on the first refine (they come from the pipeline).
+    existing_files: dict[str, str] = dict(refine_ctx.get("supplementary_files", {}))
+    if not existing_files:
+        sf_data = job.result.get("skill_folder")
+        if sf_data:
+            existing_files.update(sf_data.get("supplementary_files", {}))
     existing_files.update(new_files)
 
     # Regenerate identity + skill files with enriched data
@@ -439,6 +654,21 @@ async def refine_skill(job_id: str, request: Request) -> dict:
     output_format = refine_ctx.get("output_format", "claude_code")
     user_examples = refine_ctx.get("user_examples", "")
     user_frameworks = refine_ctx.get("user_frameworks", "")
+
+    # Merge uploaded files into examples/frameworks so SkillFolderGenerator
+    # receives them as first-class inputs (not just supplementary files).
+    if uploaded_files:
+        examples_cats = {"examples", "work_samples", "work-samples"}
+        frameworks_cats = {"frameworks", "methodologies"}
+        for filename, content in uploaded_files.items():
+            cat = next(
+                (c for c in file_categories if c.lower() in frameworks_cats), None
+            )
+            if cat:
+                user_frameworks = (user_frameworks + "\n\n" + content).strip()
+            else:
+                # Default: treat uploaded files as examples
+                user_examples = (user_examples + "\n\n" + content).strip()
 
     result_update: dict[str, Any] = {
         "identity_yaml": yaml_str,
@@ -472,13 +702,26 @@ async def refine_skill(job_id: str, request: Request) -> dict:
             "skill_name": ch.skill_name,
         }
 
-    # Re-run skill quality review
+    # Re-run skill quality review — suppress gaps for categories with
+    # file uploads or text edits so the same gap doesn't keep reappearing.
+    has_examples = (
+        bool(user_examples)
+        or "examples" in edits
+        or "examples" in file_categories
+        or bool(existing_files.get("references/work-examples.md"))
+    )
+    has_frameworks = (
+        bool(user_frameworks)
+        or "frameworks" in edits
+        or "frameworks" in file_categories
+        or bool(existing_files.get("references/frameworks.md"))
+    )
     reviewer = SkillReviewer()
     skill_gaps = reviewer.review_to_dict(
         extraction,
         methodology=methodology,
-        has_examples=bool(user_examples) or "examples" in edits,
-        has_frameworks=bool(user_frameworks) or "frameworks" in edits,
+        has_examples=has_examples,
+        has_frameworks=has_frameworks,
     )
     result_update["skill_gaps"] = skill_gaps
 
@@ -489,9 +732,23 @@ async def refine_skill(job_id: str, request: Request) -> dict:
     job.result["_refine_context"]["extraction"] = extraction.model_dump(mode="json")
     job.result["_refine_context"]["methodology"] = methodology.model_dump(mode="json")
     job.result["_refine_context"]["supplementary_files"] = existing_files
+    job.result["_refine_context"]["user_examples"] = user_examples
+    job.result["_refine_context"]["user_frameworks"] = user_frameworks
 
     # Track whether skill folder has reference files (for zip download)
     has_references = bool(existing_files)
+
+    # Persist updated result and identity to DB
+    store.persist_result(job)
+    _save_identity(
+        request,
+        name=extraction.role.title,
+        identity_yaml=yaml_str,
+        source="refine",
+        job_id=job_id,
+        extraction_json=extraction.model_dump(mode="json"),
+        methodology_json=methodology.model_dump(mode="json"),
+    )
 
     # Return only the updated fields to the frontend
     return {

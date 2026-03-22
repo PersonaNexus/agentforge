@@ -1,0 +1,15 @@
+services:
+  agentforge:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - AGENTFORGE_DB_URL=sqlite:///data/agentforge.db
+    volumes:
+      - agentforge-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  agentforge-data:

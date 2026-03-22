@@ -49,9 +49,10 @@ class MethodologyExtractor:
             for s in extraction.skills[:20]
         ) or "- (none extracted)"
 
-        # Build user context section
-        examples_stripped = user_examples.strip()
-        frameworks_stripped = user_frameworks.strip()
+        # Build user context section (truncate to prevent prompt abuse)
+        _MAX_USER_INPUT_CHARS = 10_000
+        examples_stripped = user_examples.strip()[:_MAX_USER_INPUT_CHARS]
+        frameworks_stripped = user_frameworks.strip()[:_MAX_USER_INPUT_CHARS]
         if examples_stripped or frameworks_stripped:
             user_context = METHODOLOGY_USER_CONTEXT_WITH_EXAMPLES.format(
                 examples=examples_stripped or "(none provided)",

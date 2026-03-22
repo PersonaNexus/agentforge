@@ -30,6 +30,10 @@ class AgentForgeConfig(BaseModel):
     output_dir: str = "."
     default_culture: str | None = None
     batch_parallel: int = Field(default=1, ge=1)
+    web_api_token: str | None = Field(
+        default=None,
+        description="Bearer token for web API authentication. Set to 'disabled' to opt out.",
+    )
 
 
 def load_config(config_path: Path | None = None) -> AgentForgeConfig:
@@ -54,7 +58,7 @@ def save_config(config: AgentForgeConfig, config_path: Path | None = None) -> Pa
     path.parent.mkdir(parents=True, exist_ok=True)
 
     data = config.model_dump(exclude_none=True)
-    # Mask API key for safety — store full key but don't include in plain dumps
+    # Note: API key is stored in plaintext; file permissions are restricted to 0o600
     yaml_str = yaml.dump(data, default_flow_style=False, sort_keys=False)
     path.write_text(yaml_str, encoding="utf-8")
     # Restrict file permissions (owner read/write only)

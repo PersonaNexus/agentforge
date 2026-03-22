@@ -54,24 +54,30 @@ class SkillFolderResult(BaseModel):
     )
 
     def skill_md_with_references(self) -> str:
-        """Return SKILL.md content with a reference section appended.
+        """Return SKILL.md content with user-uploaded reference files appended.
 
-        When supplementary files exist, appends a 'Reference Files' section
-        so Claude Code knows to load them from the skill folder.
+        The orchestrator SKILL.md already references the structured directories
+        (instructions/, templates/, eval/, examples/). This method only appends
+        entries for files under references/ (user uploads) that aren't part of
+        the standard structure.
         """
-        if not self.supplementary_files:
+        # Filter to only references/ files (user uploads, not generated structure)
+        ref_paths = sorted(
+            p for p in self.supplementary_files
+            if p.startswith("references/")
+        )
+        if not ref_paths:
             return self.skill_md
 
         ref_lines = [
             "",
             "## Reference Files",
             "",
-            "This skill folder includes supplementary reference files. "
+            "This skill folder includes user-provided reference documents. "
             "Load these when you need additional context:",
             "",
         ]
-        for rel_path in sorted(self.supplementary_files.keys()):
-            # Extract a human-readable name from the path
+        for rel_path in ref_paths:
             name = rel_path.rsplit("/", 1)[-1].replace("-", " ").replace(".md", "").title()
             ref_lines.append(f"- **{name}** — see `{rel_path}`")
         ref_lines.append("")
@@ -89,14 +95,18 @@ class SkillFolderResult(BaseModel):
 class SkillFolderGenerator:
     """Generates Claude Code-compatible skill folders from extraction results.
 
-    Produces a single SKILL.md with YAML frontmatter metadata and markdown
-    instructions, matching the Claude Code skill specification.
+    Produces a skill folder with a thin orchestrator SKILL.md that routes to
+    decomposed instruction, template, evaluation, and example files:
 
-    Uses a two-layer structure:
-      - Thin persona layer: identity statement, top personality traits,
-        communication style (~15 lines)
-      - Thick methodology layer: decision frameworks, trigger-technique
-        mappings, output templates, quality rubrics (~majority of the doc)
+        SKILL.md                  ← orchestrator (routes Claude to the right files)
+        instructions/voice.md     ← personality traits + communication style
+        instructions/methodology.md ← decision frameworks + trigger routing
+        instructions/scope.md     ← competencies, boundaries, audience
+        templates/*.md            ← output format templates
+        eval/checklist.md         ← pass/fail quality criteria
+        eval/advisory-board.md    ← AI reviewer personas
+        examples/good/*.md        ← annotated good output examples
+        examples/bad/anti-patterns.md ← patterns to avoid
     """
 
     def generate(
@@ -121,9 +131,16 @@ class SkillFolderGenerator:
             skill_scores: Optional per-skill scores from deep analysis.
 
         Returns:
-            SkillFolderResult with skill_name and SKILL.md content.
+            SkillFolderResult with skill_name, orchestrator SKILL.md,
+            and decomposed supplementary files.
         """
         skill_name = self._make_skill_name(extraction)
+        has_methodology = methodology and methodology.has_content()
+
+        supplementary = self._build_supplementary_files(
+            extraction, methodology, has_methodology,
+            user_examples, user_frameworks,
+        )
 
         result = SkillFolderResult(
             skill_name=skill_name,
@@ -131,6 +148,7 @@ class SkillFolderGenerator:
                 extraction, identity, jd, skill_name,
                 methodology, user_examples, user_frameworks,
             ),
+            supplementary_files=supplementary,
         )
 
         # When deep-analysis skill scores are available, attach a supplementary
@@ -160,6 +178,312 @@ class SkillFolderGenerator:
                 f"{entry.get('proficiency', 'n/a')} | {score_pct} | {entry['priority']} |"
             )
         lines.append("")
+        return "\n".join(lines)
+
+    # ------------------------------------------------------------------
+    # Supplementary file builders
+    # ------------------------------------------------------------------
+
+    def _build_supplementary_files(
+        self,
+        extraction: ExtractionResult,
+        methodology: MethodologyExtraction | None,
+        has_methodology: bool,
+        user_examples: str,
+        user_frameworks: str,
+    ) -> dict[str, str]:
+        """Build the decomposed skill folder files."""
+        files: dict[str, str] = {}
+
+        # instructions/voice.md — personality and communication style
+        files["instructions/voice.md"] = self._build_voice_file(extraction)
+
+        # instructions/methodology.md — decision frameworks + trigger routing
+        files["instructions/methodology.md"] = self._build_methodology_file(
+            extraction, methodology, has_methodology,
+        )
+
+        # instructions/scope.md — competencies, boundaries, audience
+        files["instructions/scope.md"] = self._build_scope_file(extraction)
+
+        # templates/*.md — output format templates
+        if has_methodology:
+            for tmpl in methodology.output_templates:
+                slug = self._template_slug(tmpl.name)
+                files[f"templates/{slug}.md"] = self._build_template_file(tmpl)
+
+        # eval/checklist.md — pass/fail quality criteria
+        files["eval/checklist.md"] = self._build_checklist_file(
+            extraction, methodology, has_methodology,
+        )
+
+        # eval/advisory-board.md — AI reviewer personas
+        files["eval/advisory-board.md"] = self._build_advisory_board_file(extraction)
+
+        # examples/good/*.md — user-provided work samples
+        if user_examples.strip():
+            files["examples/good/work-samples.md"] = (
+                "# Work Samples\n\n"
+                "Annotated examples of high-quality output for this role. "
+                "Use these as reference for tone, structure, and depth.\n\n"
+                f"{user_examples.strip()}\n"
+            )
+
+        # examples/bad/anti-patterns.md — patterns to avoid
+        files["examples/bad/anti-patterns.md"] = self._build_anti_patterns_file(
+            extraction, methodology, has_methodology,
+        )
+
+        return files
+
+    def _build_voice_file(self, extraction: ExtractionResult) -> str:
+        """Build instructions/voice.md — personality traits and communication style."""
+        lines = [
+            f"# Voice & Personality — {extraction.role.title}",
+            "",
+            f"You are a {extraction.role.seniority.value}-level "
+            f"{extraction.role.title} specializing in {extraction.role.domain}.",
+            "",
+            "## Personality Traits",
+            "",
+        ]
+
+        defined = extraction.suggested_traits.defined_traits()
+        if defined:
+            sorted_traits = sorted(defined.items(), key=lambda x: x[1], reverse=True)
+            for trait_name, value in sorted_traits:
+                display_name = trait_name.replace("_", " ").title()
+                desc = _trait_description(trait_name, value)
+                prompt = _trait_prompt(trait_name)
+                line = f"- **{display_name}** ({value:.0%}): {desc}"
+                if prompt:
+                    line += f". {prompt}."
+                lines.append(line)
+        else:
+            lines.append("No specific personality traits defined. Use a balanced, professional tone.")
+        lines.append("")
+
+        lines.append("## Communication Style")
+        lines.append("")
+        if defined:
+            style_notes = self._derive_communication_style(defined)
+            lines.append(". ".join(style_notes) + ".")
+        else:
+            lines.append("Use a balanced, professional communication style.")
+        lines.append("")
+
+        return "\n".join(lines)
+
+    def _build_methodology_file(
+        self,
+        extraction: ExtractionResult,
+        methodology: MethodologyExtraction | None,
+        has_methodology: bool,
+    ) -> str:
+        """Build instructions/methodology.md — decision frameworks and routing."""
+        lines = [f"# Methodology — {extraction.role.title}", ""]
+
+        if has_methodology:
+            # Decision frameworks
+            if methodology.heuristics:
+                lines.append("## Decision Frameworks")
+                lines.append("")
+                lines.append(
+                    "Use these concrete decision-making rules when handling requests. "
+                    "Each framework specifies a trigger situation and the exact procedure to follow."
+                )
+                lines.append("")
+                for i, h in enumerate(methodology.heuristics, 1):
+                    lines.append(f"### Framework {i}: {h.trigger}")
+                    lines.append("")
+                    lines.append(h.procedure)
+                    lines.append("")
+
+            # Trigger router
+            if methodology.trigger_mappings:
+                lines.append("## Trigger → Technique Router")
+                lines.append("")
+                lines.append("Match the user's request to the appropriate technique:")
+                lines.append("")
+                for mapping in methodology.trigger_mappings:
+                    lines.append(f"**{mapping.trigger_pattern}**")
+                    lines.append(f"→ *Technique:* {mapping.technique}")
+                    if mapping.output_format:
+                        lines.append(f"→ *Output format:* {mapping.output_format}")
+                    lines.append("")
+        else:
+            # Fallback: triggers from scope/responsibilities
+            self._render_triggers(lines, extraction)
+            self._render_workflows(lines, extraction)
+
+        return "\n".join(lines)
+
+    def _build_scope_file(self, extraction: ExtractionResult) -> str:
+        """Build instructions/scope.md — competencies, boundaries, audience."""
+        lines = [f"# Scope & Competencies — {extraction.role.title}", ""]
+
+        # Core competencies
+        self._render_competencies(lines, extraction)
+
+        # Scope & boundaries
+        self._render_scope(lines, extraction)
+
+        # Audience
+        self._render_audience(lines, extraction)
+
+        return "\n".join(lines)
+
+    def _build_template_file(self, tmpl: 'OutputTemplate') -> str:
+        """Build a single template file from a methodology OutputTemplate."""
+        lines = [f"# {tmpl.name}", ""]
+        if tmpl.when_to_use:
+            lines.append(f"*When to use:* {tmpl.when_to_use}")
+            lines.append("")
+        lines.append("```")
+        lines.append(tmpl.template)
+        lines.append("```")
+        lines.append("")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _template_slug(name: str) -> str:
+        """Convert a template name to a filename slug."""
+        import re
+        slug = name.lower().strip()
+        slug = re.sub(r"[^\w\s-]", "", slug)
+        slug = re.sub(r"[\s_-]+", "-", slug).strip("-")
+        return slug[:80] or "template"
+
+    def _build_checklist_file(
+        self,
+        extraction: ExtractionResult,
+        methodology: MethodologyExtraction | None,
+        has_methodology: bool,
+    ) -> str:
+        """Build eval/checklist.md — pass/fail quality criteria."""
+        lines = [
+            f"# Quality Checklist — {extraction.role.title}",
+            "",
+            "Run through this checklist before delivering any output. "
+            "Every item must pass.",
+            "",
+        ]
+
+        if has_methodology and methodology.quality_criteria:
+            for criterion in methodology.quality_criteria:
+                lines.append(f"- [ ] **{criterion.criterion}**")
+                if criterion.description:
+                    lines.append(f"      {criterion.description}")
+        else:
+            # Generate sensible defaults from the role
+            lines.append(f"- [ ] Output is relevant to {extraction.role.domain}")
+            lines.append(f"- [ ] Appropriate for {extraction.role.seniority.value}-level work")
+            if extraction.responsibilities:
+                lines.append("- [ ] Addresses the core task fully, not partially")
+            lines.append("- [ ] No unsubstantiated claims or hallucinated data")
+            lines.append("- [ ] Clear structure with actionable conclusions")
+        lines.append("")
+
+        return "\n".join(lines)
+
+    def _build_advisory_board_file(self, extraction: ExtractionResult) -> str:
+        """Build eval/advisory-board.md — AI reviewer personas for parallel evaluation."""
+        lines = [
+            f"# Advisory Board — {extraction.role.title}",
+            "",
+            "Use these reviewer personas to evaluate drafts in parallel. "
+            "Each reviewer brings a different lens to the output.",
+            "",
+        ]
+
+        # Generate domain-appropriate reviewers
+        domain = extraction.role.domain
+        title = extraction.role.title
+
+        reviewers = [
+            {
+                "name": "The Domain Expert",
+                "perspective": f"Deep expertise in {domain}",
+                "checks": f"Is this technically sound for {domain}? "
+                          "Are best practices followed? Any incorrect assumptions?",
+            },
+            {
+                "name": "The End User",
+                "perspective": f"Represents the audience who will consume this {title}'s output",
+                "checks": "Is this actionable? Is the level of detail appropriate? "
+                          "Can I use this without additional context?",
+            },
+            {
+                "name": "The Skeptic",
+                "perspective": "Challenges assumptions and looks for gaps",
+                "checks": "What edge cases are missed? What could go wrong? "
+                          "Are there unstated assumptions?",
+            },
+            {
+                "name": "The Clarity Editor",
+                "perspective": "Focuses on communication quality",
+                "checks": "Is this clear and well-structured? Could anything be misinterpreted? "
+                          "Is there unnecessary jargon or verbosity?",
+            },
+        ]
+
+        for r in reviewers:
+            lines.append(f"## {r['name']}")
+            lines.append("")
+            lines.append(f"**Perspective:** {r['perspective']}")
+            lines.append("")
+            lines.append(f"**Key checks:** {r['checks']}")
+            lines.append("")
+
+        return "\n".join(lines)
+
+    def _build_anti_patterns_file(
+        self,
+        extraction: ExtractionResult,
+        methodology: MethodologyExtraction | None,
+        has_methodology: bool,
+    ) -> str:
+        """Build examples/bad/anti-patterns.md — things to avoid."""
+        lines = [
+            f"# Anti-Patterns — {extraction.role.title}",
+            "",
+            "Avoid these common failure modes when producing output for this role.",
+            "",
+        ]
+
+        if has_methodology and methodology.quality_criteria:
+            for criterion in methodology.quality_criteria:
+                lines.append(f"### Don't: Ignore {criterion.criterion}")
+                lines.append("")
+                desc = criterion.description or f"Failing to meet: {criterion.criterion}"
+                lines.append(
+                    f"Outputs that skip this check are incomplete. {desc}"
+                )
+                lines.append("")
+        else:
+            # Generic anti-patterns for the domain
+            lines.append(f"### Don't: Work outside {extraction.role.domain} expertise")
+            lines.append("")
+            lines.append(
+                "Stay within your domain. Acknowledge when a question falls "
+                "outside your competency rather than guessing."
+            )
+            lines.append("")
+            lines.append("### Don't: Provide superficial analysis")
+            lines.append("")
+            lines.append(
+                f"As a {extraction.role.seniority.value}-level role, outputs should "
+                "demonstrate depth and rigor, not surface-level summaries."
+            )
+            lines.append("")
+            lines.append("### Don't: Skip validation")
+            lines.append("")
+            lines.append(
+                "Always verify claims against available data. Never present "
+                "assumptions as facts."
+            )
+            lines.append("")
+
         return "\n".join(lines)
 
     # ------------------------------------------------------------------
@@ -276,33 +600,53 @@ class SkillFolderGenerator:
         user_examples: str,
         user_frameworks: str,
     ) -> None:
-        """Render the markdown body with two-layer structure.
+        """Render the orchestrator SKILL.md body.
 
-        Layer 1 (thin persona): Identity, traits, communication style.
-        Layer 2 (thick methodology): Decision frameworks, trigger routing,
-        output templates, quality rubrics, competencies.
+        The SKILL.md is a thin routing document that tells Claude which files
+        to read and when. Detailed content lives in supplementary files.
         """
-        self._render_header(lines, extraction)
-
-        # ── Layer 1: Thin persona ──
-        self._render_identity(lines, extraction)
-
-        # ── Layer 2: Thick methodology ──
         has_methodology = methodology and methodology.has_content()
 
-        if has_methodology:
-            self._render_decision_frameworks(lines, methodology)
-            self._render_trigger_router(lines, methodology)
-            self._render_output_templates(lines, methodology)
-            self._render_quality_standards(lines, methodology)
-        else:
-            # Fallback to trigger list + generic workflows when methodology is absent
-            self._render_triggers(lines, extraction)
-            self._render_workflows(lines, extraction)
+        self._render_header(lines, extraction)
 
-        self._render_competencies(lines, extraction)
-        self._render_scope(lines, extraction)
-        self._render_audience(lines, extraction)
+        # Brief identity (kept inline — Claude needs this immediately)
+        self._render_identity(lines, extraction)
+
+        # Route to decomposed files
+        lines.append("## Instructions")
+        lines.append("")
+        lines.append("Read these files for detailed guidance:")
+        lines.append("")
+        lines.append("- `instructions/voice.md` — personality traits and communication style")
+        lines.append("- `instructions/methodology.md` — decision frameworks and techniques")
+        lines.append("- `instructions/scope.md` — competencies, boundaries, and audience")
+        lines.append("")
+
+        if has_methodology and methodology.output_templates:
+            lines.append("## Templates")
+            lines.append("")
+            lines.append(
+                "Use output templates from `templates/` when structuring responses. "
+                "Select the template that matches the request type."
+            )
+            lines.append("")
+
+        lines.append("## Evaluation")
+        lines.append("")
+        lines.append("Before delivering output, run through `eval/checklist.md`.")
+        lines.append(
+            "For important deliverables, consult the reviewer personas in "
+            "`eval/advisory-board.md`."
+        )
+        lines.append("")
+
+        lines.append("## Examples")
+        lines.append("")
+        lines.append(
+            "See `examples/good/` for reference output and "
+            "`examples/bad/` for anti-patterns to avoid."
+        )
+        lines.append("")
 
         # Quality signal
         self._render_quality_notice(

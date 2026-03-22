@@ -848,6 +848,19 @@ function initForgeWizard() {
     document.getElementById('forge-back-2').addEventListener('click', () => forgeShowStep(1));
     document.getElementById('forge-next-2').addEventListener('click', () => startForge());
 
+    // Import identity
+    const importBtn = document.getElementById('forge-import-btn');
+    const importFileInput = document.getElementById('forge-import-file');
+    if (importBtn && importFileInput) {
+        importBtn.addEventListener('click', () => importFileInput.click());
+        importFileInput.addEventListener('change', () => {
+            if (importFileInput.files.length > 0) {
+                document.getElementById('forge-import-filename').textContent = importFileInput.files[0].name;
+                importIdentity(importFileInput.files[0]);
+            }
+        });
+    }
+
     // Personality sliders
     initTraitSliders();
 }
@@ -954,6 +967,39 @@ function completeAllStages() {
         el.classList.add('stage-done');
         el.querySelector('.forge-stage-icon').innerHTML = '&#10003;';
     });
+}
+
+async function importIdentity(file) {
+    const statusEl = document.getElementById('forge-import-status');
+    const importBtn = document.getElementById('forge-import-btn');
+    importBtn.setAttribute('aria-busy', 'true');
+    importBtn.textContent = 'Importing...';
+    if (statusEl) statusEl.innerHTML = '';
+
+    try {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('output_format', 'claude_code');
+
+        const resp = await fetch('/api/forge/import-identity', { method: 'POST', body: formData });
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({ detail: 'Import failed' }));
+            throw new Error(err.detail || 'Import failed');
+        }
+        const { job_id, result } = await resp.json();
+
+        // Jump straight to results (step 4)
+        _lastForgeResult = result;
+        renderForgeResults(result, job_id, null, null);
+        forgeShowStep(4);
+    } catch (err) {
+        if (statusEl) {
+            statusEl.innerHTML = `<div class="panel panel-red" style="margin-top:0.75rem;padding:0.75rem;font-size:0.85rem;">${esc(err.message)}</div>`;
+        }
+    } finally {
+        importBtn.removeAttribute('aria-busy');
+        importBtn.textContent = 'Import Identity YAML';
+    }
 }
 
 async function startForge() {
@@ -1106,6 +1152,11 @@ function renderForgeResults(data, jobId, salaryMin, salaryMax) {
     </div>`;
 
     results.innerHTML = html;
+
+    // Inject tool profile if available (appends to DOM after main render)
+    if (data.tool_profile) {
+        renderToolProfileInForge(data.tool_profile, jobId);
+    }
 }
 
 window.forgeReset = function() {
@@ -1212,11 +1263,18 @@ async function refineSkill(jobId) {
         }
     });
 
-    // Collect attached files
+    // Collect attached files and track which gap categories have files
     const fileInputs = document.querySelectorAll('.skill-gap-file');
     let hasFiles = false;
+    const fileCategories = [];
     fileInputs.forEach(fi => {
-        if (fi.files && fi.files.length > 0) hasFiles = true;
+        if (fi.files && fi.files.length > 0) {
+            hasFiles = true;
+            const cat = fi.dataset.gapCategory;
+            if (cat && !fileCategories.includes(cat)) {
+                fileCategories.push(cat);
+            }
+        }
     });
 
     if (Object.keys(edits).length === 0 && !hasFiles) {
@@ -1237,6 +1295,7 @@ async function refineSkill(jobId) {
         if (hasFiles) {
             const formData = new FormData();
             formData.append('edits', JSON.stringify(edits));
+            formData.append('file_categories', JSON.stringify(fileCategories));
             fileInputs.forEach(fi => {
                 if (fi.files) {
                     for (const file of fi.files) {
@@ -1517,6 +1576,247 @@ document.getElementById('validate-key-btn').addEventListener('click', async () =
     }
 });
 
+// ========== AGENT TOOLS TAB ==========
+let _toolsActiveFilter = 'all';
+
+async function loadToolsJobs() {
+    const select = document.getElementById('tools-job-select');
+    const current = select.value;
+    try {
+        const resp = await fetch('/api/jobs?status=done&job_type=forge');
+        const jobs = await resp.json();
+        select.innerHTML = '<option value="">-- Select a forge job --</option>';
+        (jobs.items || jobs).forEach(j => {
+            const label = j.source_filename || j.id;
+            const opt = document.createElement('option');
+            opt.value = j.id || j.job_id;
+            opt.textContent = `${label} (${new Date(j.created_at || Date.now()).toLocaleDateString()})`;
+            select.appendChild(opt);
+        });
+        if (current) select.value = current;
+    } catch (err) {
+        console.error('Failed to load jobs for tools tab:', err);
+    }
+}
+
+async function loadToolProfile(jobId) {
+    try {
+        const resp = await fetch(`/api/tools/${jobId}`);
+        if (!resp.ok) return null;
+        return await resp.json();
+    } catch { return null; }
+}
+
+async function generateToolProfile(jobId) {
+    const btn = document.getElementById('tools-generate-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Generating...';
+    try {
+        const resp = await fetch('/api/tools/map', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ job_id: jobId }),
+        });
+        if (!resp.ok) {
+            const err = await resp.json();
+            throw new Error(err.detail || 'Failed to generate');
+        }
+        const profile = await resp.json();
+        renderToolProfile(profile, jobId);
+    } catch (err) {
+        document.getElementById('tools-inventory').innerHTML =
+            `<div class="panel panel-red"><div class="panel-title">Error</div>${esc(err.message)}</div>`;
+        document.getElementById('tools-results').hidden = false;
+        hideEmptyState('tools');
+    } finally {
+        btn.disabled = false;
+        btn.textContent = 'Generate Tool Profile';
+    }
+}
+
+function renderToolProfile(profile, jobId) {
+    _toolsActiveFilter = 'all';
+
+    // Inventory
+    const invEl = document.getElementById('tools-inventory');
+    const tools = profile.tools || [];
+    const categories = [...new Set(tools.map(t => t.category))].sort();
+
+    let filterHtml = `<div class="tools-filter-bar">
+        <button class="tools-filter-chip active" data-cat="all" onclick="filterTools('all', this)">All (${tools.length})</button>`;
+    categories.forEach(cat => {
+        const count = tools.filter(t => t.category === cat).length;
+        filterHtml += `<button class="tools-filter-chip" data-cat="${cat}" onclick="filterTools('${cat}', this)">${esc(cat.replace(/_/g, ' '))} (${count})</button>`;
+    });
+    filterHtml += '</div>';
+
+    let cardsHtml = '<div class="tools-grid" id="tools-card-grid">';
+    tools.forEach(t => {
+        cardsHtml += renderToolCard(t);
+    });
+    cardsHtml += '</div>';
+
+    invEl.innerHTML = `<div class="tools-section-title">Tool Inventory <span class="tools-count">${tools.length} tools</span></div>
+        ${filterHtml}${cardsHtml}`;
+
+    // Patterns
+    const patternsEl = document.getElementById('tools-patterns');
+    const patterns = profile.usage_patterns || [];
+    if (patterns.length) {
+        let pHtml = `<div class="tools-section-title">Usage Patterns <span class="tools-count">${patterns.length} workflows</span></div>`;
+        patterns.forEach(p => { pHtml += renderWorkflowCard(p); });
+        patternsEl.innerHTML = pHtml;
+    } else {
+        patternsEl.innerHTML = '';
+    }
+
+    // MCP config
+    const mcpEl = document.getElementById('tools-mcp-config');
+    const mcpTools = tools.filter(t => t.transport === 'mcp_stdio' || t.transport === 'mcp_sse');
+    if (mcpTools.length) {
+        const mcpConfig = { mcpServers: profile.mcp_config || {} };
+        const configJson = JSON.stringify(mcpConfig, null, 2);
+        mcpEl.innerHTML = `<div class="tools-section-title">MCP Configuration</div>
+            <p>Drop this into <code>.mcp.json</code> or <code>~/.claude/mcp.json</code> to give your agent access to these tools.</p>
+            <div class="mcp-config-preview"><pre>${esc(configJson)}</pre></div>
+            <div class="mcp-config-actions">
+                <button type="button" class="secondary outline" onclick="copyMcpConfig()">Copy to Clipboard</button>
+                <a href="/api/tools/${jobId}/mcp-config" role="button" class="secondary outline" download=".mcp.json">Download .mcp.json</a>
+            </div>`;
+    } else {
+        mcpEl.innerHTML = '';
+    }
+
+    document.getElementById('tools-results').hidden = false;
+    hideEmptyState('tools');
+}
+
+function renderToolCard(t) {
+    const catClass = 'cat-' + (t.category || 'other');
+    const skills = (t.source_skills || []).slice(0, 3);
+    const skillsText = skills.length ? skills.map(s => esc(s)).join(', ') : '';
+    const params = Object.entries(t.parameters || {}).slice(0, 3);
+    let paramsHtml = '';
+    if (params.length) {
+        paramsHtml = '<div style="margin-top:0.4rem;font-size:0.75rem;opacity:0.7;">' +
+            params.map(([k, v]) => `<code>${esc(k)}</code>: ${esc(v)}`).join('<br>') + '</div>';
+    }
+    return `<div class="tool-card" data-category="${t.category || 'other'}">
+        <div class="tool-card-header">
+            <span class="tool-card-name">${esc(t.name)}</span>
+            <span class="tool-card-priority ${t.priority || 'recommended'}">${esc(t.priority || 'recommended')}</span>
+        </div>
+        <div class="tool-card-desc">${esc(t.description)}</div>
+        <div class="tool-card-meta">
+            <span class="tool-card-badge ${catClass}">${esc((t.category || 'other').replace(/_/g, ' '))}</span>
+            <span class="tool-card-badge">${esc((t.transport || 'builtin').replace(/_/g, ' '))}</span>
+            ${t.mcp_server ? `<span class="tool-card-badge" style="font-size:0.7rem;">${esc(t.mcp_server)}</span>` : ''}
+        </div>
+        ${skillsText ? `<div class="tool-card-skills">Used by: ${skillsText}</div>` : ''}
+        ${paramsHtml}
+    </div>`;
+}
+
+function renderWorkflowCard(p) {
+    let stepsHtml = '';
+    (p.steps || []).forEach((s, i) => {
+        if (i > 0) stepsHtml += '<div class="workflow-step-connector"></div>';
+        stepsHtml += `<div class="workflow-step">
+            <span class="workflow-step-num">${i + 1}</span>
+            <div>
+                <div class="workflow-step-tool">${esc(s.tool)}</div>
+                <div class="workflow-step-action">${esc(s.action)}</div>
+                ${s.inputs || s.outputs ? `<div class="workflow-step-io">${s.inputs ? 'In: ' + esc(s.inputs) : ''}${s.inputs && s.outputs ? ' &rarr; ' : ''}${s.outputs ? 'Out: ' + esc(s.outputs) : ''}</div>` : ''}
+            </div>
+        </div>`;
+    });
+    return `<div class="workflow-card">
+        <div class="workflow-card-title">${esc(p.name)}</div>
+        <div class="workflow-card-trigger">${esc(p.trigger)}</div>
+        <div class="workflow-steps">${stepsHtml}</div>
+        ${p.source_responsibility ? `<div style="margin-top:0.5rem;font-size:0.75rem;opacity:0.6;">From: ${esc(p.source_responsibility)}</div>` : ''}
+    </div>`;
+}
+
+window.filterTools = function(cat, chipEl) {
+    _toolsActiveFilter = cat;
+    document.querySelectorAll('.tools-filter-chip').forEach(c => c.classList.remove('active'));
+    if (chipEl) chipEl.classList.add('active');
+    document.querySelectorAll('#tools-card-grid .tool-card').forEach(card => {
+        card.style.display = (cat === 'all' || card.dataset.category === cat) ? '' : 'none';
+    });
+};
+
+window.copyMcpConfig = async function() {
+    const pre = document.querySelector('#tools-mcp-config pre');
+    if (!pre) return;
+    try {
+        await navigator.clipboard.writeText(pre.textContent);
+        const btn = document.querySelector('#tools-mcp-config .mcp-config-actions button');
+        if (btn) { btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = 'Copy to Clipboard', 2000); }
+    } catch {}
+};
+
+// Also inject tool profile into forge results when available
+function renderToolProfileInForge(profile, jobId) {
+    const container = document.getElementById('skill-preview-container');
+    if (!container || !profile) return;
+
+    const tools = profile.tools || [];
+    if (!tools.length) return;
+
+    const mcpTools = tools.filter(t => t.transport === 'mcp_stdio' || t.transport === 'mcp_sse');
+    const toolSummary = tools.slice(0, 5).map(t => `<code>${esc(t.name)}</code>`).join(', ');
+    const moreCount = tools.length > 5 ? ` +${tools.length - 5} more` : '';
+
+    let html = `<details class="forge-skill-preview" style="margin-top:0.5rem;">
+        <summary>Agent Tools (${tools.length} tools${mcpTools.length ? ', ' + mcpTools.length + ' MCP' : ''})</summary>
+        <div style="padding:0.5rem;">
+            <p><strong>Tools:</strong> ${toolSummary}${moreCount}</p>`;
+
+    if (mcpTools.length) {
+        const config = JSON.stringify({ mcpServers: profile.mcp_config || {} }, null, 2);
+        html += `<p><strong>MCP Config:</strong></p><pre style="font-size:0.8rem;">${esc(config)}</pre>`;
+    }
+
+    html += `<p><a href="#tools" onclick="document.getElementById('tools-job-select').value='${jobId}'">View full tool profile &rarr;</a></p>`;
+    html += '</div></details>';
+
+    container.insertAdjacentHTML('beforeend', html);
+}
+
+function initToolsTab() {
+    loadToolsJobs();
+
+    document.getElementById('tools-refresh-btn').addEventListener('click', loadToolsJobs);
+
+    document.getElementById('tools-job-select').addEventListener('change', async function() {
+        const jobId = this.value;
+        const btn = document.getElementById('tools-generate-btn');
+        btn.disabled = !jobId;
+
+        if (!jobId) {
+            document.getElementById('tools-results').hidden = true;
+            showEmptyState('tools');
+            return;
+        }
+
+        // Try to load existing profile
+        const profile = await loadToolProfile(jobId);
+        if (profile) {
+            renderToolProfile(profile, jobId);
+        } else {
+            document.getElementById('tools-results').hidden = true;
+            showEmptyState('tools');
+        }
+    });
+
+    document.getElementById('tools-generate-btn').addEventListener('click', function() {
+        const jobId = document.getElementById('tools-job-select').value;
+        if (jobId) generateToolProfile(jobId);
+    });
+}
+
 // ========== INIT ==========
 document.addEventListener('DOMContentLoaded', () => {
     initTheme();
@@ -1526,4 +1826,5 @@ document.addEventListener('DOMContentLoaded', () => {
     loadCultureTemplates();
     loadSettings();
     initForgeWizard();
+    initToolsTab();
 });
