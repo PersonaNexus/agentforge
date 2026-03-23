@@ -1,8 +1,14 @@
 # AgentForge
 
-Transform job descriptions into deployable AI agent blueprints via [PersonaNexus](https://github.com/PersonaNexus/PersonaNexus).
+> **Note:** The published package and CLI are called **AgentForge** (`agentforge`). The GitHub repository is named **AgentSkillFactory** for historical reasons — they are the same project.
 
-AgentForge reads a job description (txt, md, pdf, docx), extracts skills and role metadata with an LLM, maps them to PersonaNexus personality traits, and outputs a ready-to-use agent identity — including Claude Code skill folders you can drop straight into `.claude/skills/`.
+Transform job descriptions into deployable AI agent blueprints via [PersonaNexus](https://github.com/PersonaNexus/personanexus).
+
+AgentForge reads a job description (txt, md, pdf, docx), extracts skills and role metadata with an LLM, maps them to [PersonaNexus](https://github.com/PersonaNexus/personanexus) personality traits, and outputs a ready-to-use agent identity — including Claude Code skill folders you can drop straight into `.claude/skills/`.
+
+### Relationship to PersonaNexus
+
+[PersonaNexus](https://github.com/PersonaNexus/personanexus) is the declarative identity specification — it defines *who* an agent is (personality traits, guardrails, communication style). AgentForge is the companion tool that *generates* PersonaNexus identities automatically from job descriptions, team requirements, and other real-world inputs. Think of PersonaNexus as the schema and AgentForge as the factory.
 
 ## Install
 
@@ -208,4 +214,4 @@ src/agentforge/
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
