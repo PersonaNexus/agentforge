@@ -1423,6 +1423,107 @@ def wizard() -> None:
     run_wizard()
 
 
+@app.command(name="prompt-size")
+def prompt_size(
+    skill_file: Path = typer.Argument(..., help="Path to a SKILL.md file to analyze"),
+    identity: Path | None = typer.Option(
+        None, "--identity", "-i", help="Optional identity YAML file to include in analysis"
+    ),
+    budget: int = typer.Option(
+        8000, "--budget", "-b", help="Token budget threshold for warnings"
+    ),
+    format: str = typer.Option(
+        "table", "--format", "-f", help="Output format: table or json"
+    ),
+) -> None:
+    """Analyze prompt size and detect bloat in generated SKILL.md files.
+
+    Measures character count, line count, and estimated tokens per section.
+    Flags oversized sections, redundant content, and overall bloat.
+
+    Examples:
+        agentforge prompt-size output/SKILL.md
+        agentforge prompt-size output/SKILL.md --identity output/identity.yaml
+        agentforge prompt-size output/SKILL.md --budget 5000
+        agentforge prompt-size output/SKILL.md --format json
+    """
+    if not skill_file.exists():
+        console.print(f"[red]Error:[/red] File not found: {skill_file}")
+        raise typer.Exit(code=1)
+
+    skill_content = skill_file.read_text()
+    identity_content = None
+    if identity:
+        if not identity.exists():
+            console.print(f"[red]Error:[/red] File not found: {identity}")
+            raise typer.Exit(code=1)
+        identity_content = identity.read_text()
+
+    from agentforge.analysis.prompt_size_analyzer import PromptSizeAnalyzer
+
+    analyzer = PromptSizeAnalyzer(token_budget=budget)
+
+    if identity_content:
+        report = analyzer.analyze_combined(skill_content, identity_content)
+    else:
+        report = analyzer.analyze_skill_md(skill_content)
+
+    if format == "json":
+        console.print(Panel(
+            json.dumps(report.model_dump(), indent=2),
+            title="Prompt Size Report",
+            border_style="blue",
+        ))
+    else:
+        # Summary panel
+        assessment_color = {
+            "lean": "green",
+            "moderate": "yellow",
+            "bloated": "red",
+        }.get(report.overall_assessment, "white")
+        console.print(Panel(
+            f"[bold]Total:[/bold] {report.total_chars:,} chars | "
+            f"{report.total_lines:,} lines | "
+            f"~{report.total_estimated_tokens:,} tokens\n"
+            f"[bold]Assessment:[/bold] [{assessment_color}]{report.overall_assessment.upper()}[/{assessment_color}]",
+            title="Prompt Size Summary",
+            border_style=assessment_color,
+        ))
+
+        # Section breakdown table
+        table = Table(title="Section Breakdown", show_lines=True)
+        table.add_column("Section", style="cyan", min_width=20)
+        table.add_column("Tokens", style="yellow", justify="right")
+        table.add_column("Lines", justify="right")
+        table.add_column("%", justify="right")
+        table.add_column("Bar", min_width=20)
+
+        for section in sorted(report.sections, key=lambda s: s.estimated_tokens, reverse=True):
+            bar_len = min(int(section.percentage / 5), 20)
+            bar = "[blue]" + "#" * bar_len + "[/blue]" + "." * (20 - bar_len)
+            table.add_row(
+                section.name,
+                f"{section.estimated_tokens:,}",
+                str(section.line_count),
+                f"{section.percentage:.1f}%",
+                bar,
+            )
+        console.print(table)
+
+        # Verdicts
+        if report.verdicts:
+            console.print()
+            for verdict in report.verdicts:
+                icon = {"warning": "[yellow]!", "bloated": "[red]!!", "ok": "[green]~"}
+                sev = icon.get(verdict.severity, "[white]?")
+                console.print(f"  {sev}[/] [{verdict.severity}]{verdict.section}[/]: {verdict.message}")
+            console.print()
+
+    # Exit code 1 if bloated (useful for CI)
+    if report.overall_assessment == "bloated":
+        raise typer.Exit(code=1)
+
+
 @app.command()
 def version() -> None:
     """Show AgentForge version."""
