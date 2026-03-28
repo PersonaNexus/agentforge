@@ -6,9 +6,15 @@ Transform job descriptions into deployable AI agent blueprints via [PersonaNexus
 
 AgentForge reads a job description (txt, md, pdf, docx), extracts skills and role metadata with an LLM, maps them to [PersonaNexus](https://github.com/PersonaNexus/personanexus) personality traits, and outputs a ready-to-use agent identity — including Claude Code skill folders you can drop straight into `.claude/skills/`.
 
-### Relationship to PersonaNexus
+### PersonaNexus Ecosystem
 
-[PersonaNexus](https://github.com/PersonaNexus/personanexus) is the declarative identity specification — it defines *who* an agent is (personality traits, guardrails, communication style). AgentForge is the companion tool that *generates* PersonaNexus identities automatically from job descriptions, team requirements, and other real-world inputs. Think of PersonaNexus as the schema and AgentForge as the factory.
+| Project | Role |
+|---------|------|
+| [**PersonaNexus**](https://github.com/PersonaNexus/personanexus) | Declarative identity spec — defines *who* an agent is (traits, guardrails, communication style) |
+| **AgentForge** (this repo) | The factory — *generates* PersonaNexus identities from job descriptions and team requirements |
+| [**Voice Packs**](https://github.com/PersonaNexus/voice-packs) | Weight-level personality — LoRA adapters that encode authorial voice into model weights ([adapters on HuggingFace](https://huggingface.co/jcrowan3/voice-pack-adapters)) |
+
+Think of PersonaNexus as the schema, AgentForge as the factory, and Voice Packs as the voice.
 
 ## Install
 
