@@ -186,6 +186,30 @@ agentforge test job_posting.txt
 
 Generates scenarios from trigger mappings, responsibilities, and edge cases. Evaluates responses with LLM-as-judge scoring and produces a pass/fail report.
 
+## Quality & safety tools
+
+Analyze, lint, and validate generated skills:
+
+```bash
+# Check prompt size and detect bloat
+agentforge prompt-size output/SKILL.md
+
+# Lint for structural/semantic issues (missing sections, trait contradictions)
+agentforge lint output/SKILL.md
+
+# Audit safety guardrails (with auto-fix for missing ones)
+agentforge audit output/SKILL.md --domain "data engineering"
+agentforge audit output/SKILL.md --fix --output fixed_SKILL.md
+
+# Estimate monthly token costs
+agentforge cost output/SKILL.md --daily-calls 100
+
+# Compare two versions of a skill
+agentforge prompt-diff v1/SKILL.md v2/SKILL.md
+```
+
+All quality commands support `--format json` for CI integration and return exit code 1 on failure.
+
 ## Non-JD input sources
 
 Enrich skills with context beyond the job description:
@@ -211,7 +235,7 @@ src/agentforge/
 ├── mapping/                # Skill-to-trait mapping, culture
 ├── models/                 # Pydantic data models
 ├── pipeline/               # Composable forge pipeline
-├── analysis/               # Gap analysis, skill review, team composition
+├── analysis/               # Gap analysis, skill review, guardrails, linting, cost, prompt size
 ├── composition/            # Multi-agent team forging, conductor generation
 ├── testing/                # Skill validation, scenario generation, evaluation
 ├── web/                    # FastAPI app, routes, templates

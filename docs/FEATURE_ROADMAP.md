@@ -1,6 +1,22 @@
-# Feature Roadmap: Next Three Capabilities
+# Feature Roadmap
 
-Three high-leverage features that extend AgentSkillFactory from a one-shot forge into a closed-loop agent development platform.
+Features that extend AgentSkillFactory from a one-shot forge into a closed-loop agent development platform.
+
+## Shipped: Quality & Safety Tools
+
+The following features have been implemented and are available in the CLI:
+
+| Command | Description | Status |
+|---------|-------------|--------|
+| `agentforge prompt-size` | Measure prompt size per section, detect bloat | Shipped |
+| `agentforge lint` | Structural + semantic linting (trait contradictions, missing sections) | Shipped |
+| `agentforge audit [--fix]` | Safety guardrail audit with auto-fix (12 checks, domain-aware) | Shipped |
+| `agentforge cost` | Token cost projection from actual prompt size | Shipped |
+| `agentforge prompt-diff` | Section-by-section skill version comparison | Shipped |
+
+---
+
+## Previously Shipped
 
 ---
 
@@ -840,3 +856,23 @@ Why third: Highest complexity (multiple parsers, privacy handling, LLM prompt en
 **Database:**
 - New tables/columns: `test_reports`, `team_compositions`, `supplementary_sources`
 - Migration strategy: additive only (new tables, no schema changes to existing)
+
+---
+
+## Future: Skill Composition & Merging
+
+**Problem:** You have two existing SKILL.md files (e.g., "Data Engineer" and "Security Analyst") and want to create a hybrid "Data Security Engineer" without re-forging from scratch.
+
+**Solution:** A `SkillMerger` that combines two SKILL.md files — union skills, blend traits, merge methodology, and flag conflicts.
+
+**CLI:** `agentforge merge skill1.md skill2.md [--output merged.md]`
+
+---
+
+## Future: Multi-Framework Export Expansion
+
+**Problem:** AgentForge currently exports to Claude Code, OpenClaw, ClawHub, and LangGraph. Community demand for CrewAI, AutoGen, and portable JSON specs.
+
+**Solution:** New generator classes in `generation/` following the `OpenClawCompiler` pattern, one per target framework.
+
+Candidates: CrewAI agent config, AutoGen agent config, generic portable JSON agent spec.

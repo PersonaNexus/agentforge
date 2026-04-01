@@ -178,6 +178,66 @@ agentforge test job.txt --model claude-sonnet-4-20250514
 agentforge culture parse culture.md --output profile.yaml
 agentforge culture to-mixin profile.yaml
 agentforge culture list
+
+# Quality & safety tools
+agentforge prompt-size output/SKILL.md                       # Size analysis & bloat detection
+agentforge lint output/SKILL.md                              # Structural + semantic linting
+agentforge audit output/SKILL.md --domain finance            # Safety guardrail audit
+agentforge audit output/SKILL.md --fix -o fixed.md           # Auto-fix missing guardrails
+agentforge cost output/SKILL.md --daily-calls 100            # Token cost projection
+agentforge prompt-diff old.md new.md                         # Section-by-section diff
+```
+
+---
+
+## Quality & Safety Tools
+
+Five commands for validating generated skills — all support `--format json` and return exit code 1 on failure (CI-friendly).
+
+### Prompt Size (`prompt-size`)
+
+Measures character count, line count, and estimated tokens per section. Flags bloated sections, duplicate content, and overall prompt size against configurable budgets.
+
+```bash
+agentforge prompt-size output/SKILL.md --budget 5000
+```
+
+### Skill Linter (`lint`)
+
+Static analysis for structural and semantic issues:
+- **Structural**: missing frontmatter, missing/empty sections, required frontmatter fields
+- **Semantic**: trait contradictions (e.g., high directness + high empathy), automation potential vs. soft skill mismatch
+- **Coherence**: scope overlap between primary and secondary boundaries
+
+```bash
+agentforge lint output/SKILL.md
+```
+
+### Guardrail Auditor (`audit`)
+
+Validates SKILL.md against a safety checklist of 6 universal guardrails (no fabrication, scope boundaries, escalation paths, error handling, confidence signals, no harmful content) plus domain-specific checks (finance, health, legal, data, HR, security).
+
+Use `--fix` to auto-inject missing guardrails:
+
+```bash
+agentforge audit output/SKILL.md --domain "data engineering"
+agentforge audit output/SKILL.md --fix --output fixed_SKILL.md
+```
+
+### Cost Projection (`cost`)
+
+Estimates monthly and annual token costs based on actual prompt size and expected daily usage:
+
+```bash
+agentforge cost output/SKILL.md --daily-calls 100 --cost-per-1k 0.008
+```
+
+### Prompt Diff (`prompt-diff`)
+
+Compares two SKILL.md versions section-by-section, showing added/removed/changed sections, personality trait deltas, and total token changes:
+
+```bash
+agentforge prompt-diff v1/SKILL.md v2/SKILL.md
 ```
 
 ---
