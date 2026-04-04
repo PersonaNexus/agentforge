@@ -210,6 +210,39 @@ agentforge prompt-diff v1/SKILL.md v2/SKILL.md
 
 All quality commands support `--format json` for CI integration and return exit code 1 on failure.
 
+## Wiki-memory (structured knowledge layer)
+
+Adds a durable, cross-linked knowledge layer alongside each agent's flat episodic MEMORY. Two-tier memory: episodic (MEMORY.md) + structured wiki pages.
+
+```bash
+# Initialize a wiki at a directory
+python -m agentforge.wiki_memory.cli init --root ~/wiki
+
+# Add a page directly
+python -m agentforge.wiki_memory.cli add \
+  --title "AI Gateway" --type entity --kind project \
+  --alias gateway --fact "Runs on port 8900" --source session:2026-04-04
+
+# Capture a candidate fact (goes to review queue)
+python -m agentforge.wiki_memory.cli candidate \
+  --subject "AI Gateway" --claim "Uses Gemma 4 E4B" \
+  --type entity --kind project --source session:2026-04-04
+
+# Review pending candidates
+python -m agentforge.wiki_memory.cli pending
+python -m agentforge.wiki_memory.cli promote --accept-all
+```
+
+**Key features:**
+- **Capture → candidate → review → promote** funnel (no silent writes)
+- **3-tier entity resolver** (slug → alias → title substring)
+- **Provenance on every fact** (source, confidence, date)
+- **Exact-dedupe** on claim text, confidence roll-up
+- Filesystem-backed markdown with YAML frontmatter
+- Audit trail of all review decisions
+
+See `docs/wiki-memory-design.md` for the full design.
+
 ## Non-JD input sources
 
 Enrich skills with context beyond the job description:
