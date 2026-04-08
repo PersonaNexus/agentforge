@@ -106,6 +106,31 @@ class TestStore:
         assert store.resolve("Gate").id == "ai-gateway"
         assert store.resolve("nothing-here") is None
 
+    def test_research_fields_roundtrip(self, tmp_path):
+        store = WikiStore(tmp_path)
+        page = Page(
+            id="transformer", title="Transformer Paper", type="entity", kind="paper",
+            tags=["research"],
+            citations=["Vaswani et al., NeurIPS 2017"],
+            urls=["https://arxiv.org/abs/1706.03762"],
+            why_it_matters="Replaced recurrence with self-attention.",
+            open_questions=["Optimal depth for small models?"],
+            downstream_actions=["Benchmark against our embeddings"],
+            commentary="Foundational for everything we do.",
+        )
+        page.add_fact("Introduced multi-head attention", source="paper")
+        store.save(page)
+        loaded = store.load("transformer")
+        assert loaded is not None
+        assert loaded.kind == "paper"
+        assert loaded.citations == ["Vaswani et al., NeurIPS 2017"]
+        assert loaded.urls == ["https://arxiv.org/abs/1706.03762"]
+        assert loaded.why_it_matters == "Replaced recurrence with self-attention."
+        assert loaded.open_questions == ["Optimal depth for small models?"]
+        assert loaded.downstream_actions == ["Benchmark against our embeddings"]
+        assert loaded.commentary == "Foundational for everything we do."
+        assert len(loaded.facts) == 1
+
     def test_search(self, tmp_path):
         store = WikiStore(tmp_path)
         p1 = Page(id="ai-gateway", title="AI Gateway", type="entity", kind="project")
@@ -220,6 +245,48 @@ class TestCLI:
 
         assert cli_main(["--root", root, "search", "gateway"]) == 0
         assert "ai-gateway" in capsys.readouterr().out
+
+    def test_research_import_roundtrip(self, tmp_path, capsys):
+        root = str(tmp_path)
+        assert cli_main([
+            "--root", root, "research-import",
+            "--title", "Attention Is All You Need",
+            "--kind", "paper",
+            "--alias", "transformer-paper",
+            "--url", "https://arxiv.org/abs/1706.03762",
+            "--citation", "Vaswani et al., NeurIPS 2017",
+            "--summary", "Introduced the transformer architecture.",
+            "--why", "Foundation of all modern LLMs.",
+            "--question", "Optimal layer count for small models?",
+            "--action", "Evaluate for PersonaNexus embeddings",
+            "--commentary", "Core reference for our stack.",
+            "--fact", "Proposed self-attention replacing recurrence",
+            "--source", "atlas-research:2026-04-08",
+        ]) == 0
+        # Verify page on disk.
+        page_path = tmp_path / "entities" / "paper" / "attention-is-all-you-need.md"
+        assert page_path.exists()
+        content = page_path.read_text()
+        assert "research" in content  # auto-tagged
+        assert "Why it matters" in content
+        assert "Foundation of all modern LLMs" in content
+        assert "Citations" in content
+        assert "Vaswani et al." in content
+        assert "Open questions" in content
+        assert "Downstream actions" in content
+        assert "Internal commentary" in content
+        # Reload via store.
+        store = WikiStore(tmp_path)
+        page = store.load("attention-is-all-you-need")
+        assert page is not None
+        assert page.kind == "paper"
+        assert page.why_it_matters == "Foundation of all modern LLMs."
+        assert len(page.citations) == 1
+        assert len(page.urls) == 1
+        assert len(page.open_questions) == 1
+        assert len(page.downstream_actions) == 1
+        assert page.commentary == "Core reference for our stack."
+        assert len(page.facts) == 1
 
     def test_candidate_then_promote_all(self, tmp_path, capsys):
         root = str(tmp_path)

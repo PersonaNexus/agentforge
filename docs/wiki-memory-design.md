@@ -25,10 +25,35 @@ Layer 1 tells you **how to work with Jim**. Layer 2 tells you **what Project X i
 
 Two top-level page types:
 
-- **entity** — a real-world thing with identity: person, project, system, organization, place
+- **entity** — a real-world thing with identity: person, project, system, organization, place, paper, experiment, lab
 - **concept** — a topic, idea, pattern, or domain: "agent orchestration", "Catholic education", "prompt caching"
 
-Entities have a `kind` sub-type (`person | project | system | org | place | other`). Concepts don't.
+Entities have a `kind` sub-type (`person | project | system | org | place | other | paper | experiment | lab`). Concepts don't.
+
+### Research knowledge space
+
+Research findings map naturally to these page types:
+
+| Research type | Wiki mapping | Example |
+|---|---|---|
+| **Papers** | entity/paper | "Attention Is All You Need" |
+| **Themes** | concept (tag: research) | "prompt-caching", "agent-orchestration" |
+| **People** | entity/person | researcher profiles |
+| **Labs** | entity/lab | "Anthropic", "DeepMind" |
+| **Projects** | entity/project | open-source tools, frameworks |
+| **Experiments** | entity/experiment | internal benchmarks, A/B tests |
+| **Internal Implications** | concept (tag: implications) | "what X means for our stack" |
+
+Each research page supports these additional sections (rendered after ## Summary, before ## Facts):
+
+- **## Why it matters** — significance and relevance
+- **## Citations** — academic/industry citations (bulleted)
+- **## URLs** — source links (bulleted)
+- **## Open questions** — unresolved gaps (bulleted)
+- **## Downstream actions** — what to do next (bulleted)
+- **## Internal commentary** — our interpretation and notes
+
+Use `agentforge wiki research-import` to create research pages from the CLI with all fields populated in one command.
 
 ### Frontmatter (YAML)
 

@@ -7,12 +7,17 @@ from datetime import date, datetime
 from typing import Literal
 
 PageType = Literal["entity", "concept"]
-EntityKind = Literal["person", "project", "system", "org", "place", "other"]
+EntityKind = Literal[
+    "person", "project", "system", "org", "place", "other",
+    # Research kinds
+    "paper", "experiment", "lab",
+]
 Confidence = Literal["high", "medium", "low"]
 
 _VALID_PAGE_TYPES: tuple[PageType, ...] = ("entity", "concept")
 _VALID_KINDS: tuple[EntityKind, ...] = (
     "person", "project", "system", "org", "place", "other",
+    "paper", "experiment", "lab",
 )
 _VALID_CONFIDENCE: tuple[Confidence, ...] = ("high", "medium", "low")
 
@@ -62,7 +67,14 @@ class Page:
     related: list[str] = field(default_factory=list)
     summary: str = ""
     facts: list[Fact] = field(default_factory=list)
-    body_extra: str = ""          # anything after ## Facts (## History, etc.)
+    # Research-oriented optional sections
+    citations: list[str] = field(default_factory=list)
+    urls: list[str] = field(default_factory=list)
+    why_it_matters: str = ""
+    open_questions: list[str] = field(default_factory=list)
+    downstream_actions: list[str] = field(default_factory=list)
+    commentary: str = ""
+    body_extra: str = ""          # anything after standard sections
 
     def __post_init__(self) -> None:
         if self.type not in _VALID_PAGE_TYPES:

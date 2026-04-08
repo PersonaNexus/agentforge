@@ -233,11 +233,27 @@ class WikiStore:
         parts = [f"---\n{fm_yaml}\n---", "", f"# {page.title}", ""]
         if page.summary:
             parts += ["## Summary", "", page.summary.strip(), ""]
+        if page.why_it_matters:
+            parts += ["## Why it matters", "", page.why_it_matters.strip(), ""]
         parts += ["## Facts", ""]
         if page.facts:
             parts += [f.to_line() for f in page.facts]
         else:
             parts += ["_(no facts yet)_"]
+        if page.citations:
+            parts += ["", "## Citations", ""]
+            parts += [f"- {c}" for c in page.citations]
+        if page.urls:
+            parts += ["", "## URLs", ""]
+            parts += [f"- {u}" for u in page.urls]
+        if page.open_questions:
+            parts += ["", "## Open questions", ""]
+            parts += [f"- {q}" for q in page.open_questions]
+        if page.downstream_actions:
+            parts += ["", "## Downstream actions", ""]
+            parts += [f"- {a}" for a in page.downstream_actions]
+        if page.commentary:
+            parts += ["", "## Internal commentary", "", page.commentary.strip()]
         if page.body_extra.strip():
             parts += ["", page.body_extra.strip()]
         return "\n".join(parts) + "\n"
@@ -269,6 +285,12 @@ class WikiStore:
             related=list(fm.get("related") or []),
             summary=summary,
             facts=facts,
+            citations=_parse_bullet_section(body, "Citations"),
+            urls=_parse_bullet_section(body, "URLs"),
+            why_it_matters=(_extract_section(body, "Why it matters") or "").strip(),
+            open_questions=_parse_bullet_section(body, "Open questions"),
+            downstream_actions=_parse_bullet_section(body, "Downstream actions"),
+            commentary=(_extract_section(body, "Internal commentary") or "").strip(),
             body_extra=body_extra,
         )
 
@@ -308,23 +330,38 @@ def _parse_summary_section(body: str) -> str:
     return (section or "").strip()
 
 
+def _parse_bullet_section(body: str, heading: str) -> list[str]:
+    """Parse a bulleted list from a named ## section."""
+    section = _extract_section(body, heading)
+    if not section:
+        return []
+    items: list[str] = []
+    for line in section.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("- "):
+            items.append(stripped[2:].strip())
+    return items
+
+
+# Headings that the renderer manages — anything else is body_extra.
+_MANAGED_HEADINGS = frozenset({
+    "Summary", "Why it matters", "Facts", "Citations", "URLs",
+    "Open questions", "Downstream actions", "Internal commentary",
+})
+
+
 def _parse_body_extra(body: str) -> str:
-    """Everything after the ## Facts section (## History, ## Open questions, etc.)."""
+    """Collect any ## sections NOT in _MANAGED_HEADINGS (e.g. ## History)."""
     lines = body.splitlines()
-    try:
-        start = next(i for i, line in enumerate(lines) if line.strip() == "## Facts")
-    except StopIteration:
-        return ""
-    # Walk forward until the next `## ` heading.
-    after_facts = lines[start + 1:]
-    extra_start = None
-    for i, line in enumerate(after_facts):
-        if line.startswith("## ") and i > 0:
-            extra_start = i
-            break
-    if extra_start is None:
-        return ""
-    return "\n".join(after_facts[extra_start:]).strip()
+    extra_parts: list[str] = []
+    capturing = False
+    for line in lines:
+        if line.startswith("## "):
+            heading = line[3:].strip()
+            capturing = heading not in _MANAGED_HEADINGS
+        if capturing:
+            extra_parts.append(line)
+    return "\n".join(extra_parts).strip()
 
 
 def _extract_section(body: str, heading: str) -> str | None:
