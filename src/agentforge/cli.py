@@ -203,7 +203,23 @@ def forge(
     ),
     target: str = typer.Option(
         "", "--target", "-t",
-        help="Deployment target: 'openclaw' for OpenClaw-ready output",
+        help=(
+            "Deployment target. Empty/'claude-code' (default): full "
+            "Claude-Code-ready output incl. identity.yaml. 'openclaw': "
+            "OpenClaw-style SOUL.md/STYLE.md/personality.json, identity.yaml "
+            "skipped (decorative for OpenClaw runtimes). 'plain': minimum "
+            "output — analysis + SKILL.md only, no identity.yaml, no "
+            "personality.json (for runtimes that load only their own SOUL "
+            "or want forge as an analysis-only step)."
+        ),
+    ),
+    keep_identity_yaml: bool = typer.Option(
+        False, "--keep-identity-yaml",
+        help=(
+            "Force identity.yaml to be written even when --target is "
+            "'openclaw' or 'plain'. By default those targets skip it "
+            "since their runtimes don't load it."
+        ),
     ),
     mode: str = typer.Option(
         "", "--mode",
@@ -227,17 +243,24 @@ def forge(
 
     Runs the full pipeline: ingest -> extract -> map -> culture -> generate -> analyze.
 
-    Outputs:
-      - PersonaNexus identity YAML (always)
-      - Claude Code skill folder (always) — drop into .claude/skills/ to use
-      - Full agent profile SKILL.md (unless --no-skill-file) — detailed analysis
-      - OpenClaw files (with --target openclaw): SOUL.md, STYLE.md, personality.json
+    Outputs depend on --target:
+      - default / 'claude-code': identity.yaml + full agent profile SKILL.md
+        + (with --skill-folder) Claude Code skill folder
+      - 'openclaw': identity.yaml suppressed; OpenClaw files (SOUL.md,
+        STYLE.md, personality.json) generated for OpenClaw runtimes
+      - 'plain': identity.yaml suppressed; analysis output + full agent
+        profile SKILL.md only — for runtimes that load only their own
+        SOUL.md or want forge as an analysis-only step
+
+    Pass --keep-identity-yaml to force identity.yaml on any target.
 
     Examples:
         agentforge forge job_posting.txt
         agentforge forge resume.pdf --culture startup.yaml -d ./agents
         agentforge forge posting.md --quick --no-skill-file
         agentforge forge job.txt --target openclaw -d ./openclaw-agents/
+        agentforge forge job.txt --target plain  # minimum output, no decorative files
+        agentforge forge job.txt --target plain --keep-identity-yaml
         agentforge forge job.txt --mode cron --schedule "0 8 * * *"
         agentforge forge job.txt --supplement convos.md --supplement runbook.md
         agentforge forge job.txt --no-methodology  # skip decision pattern extraction
@@ -294,6 +317,15 @@ def forge(
                     console.print("[yellow]Aborted.[/yellow]")
                     raise typer.Exit(code=0)
 
+    # Validate --target
+    _VALID_TARGETS = {"", "claude-code", "openclaw", "plain"}
+    if target not in _VALID_TARGETS:
+        console.print(
+            f"[red]Error:[/red] Unknown --target {target!r}. "
+            f"Expected one of: {', '.join(sorted(t for t in _VALID_TARGETS if t))}."
+        )
+        raise typer.Exit(code=1)
+
     # Build pipeline
     if target == "openclaw":
         pipeline = ForgePipeline.openclaw()
@@ -330,6 +362,8 @@ def forge(
         console.print(f"[blue]Mode:[/blue] cron (schedule: {context['cron_schedule']})")
     if target == "openclaw":
         console.print(f"[blue]Target:[/blue] OpenClaw")
+    elif target == "plain":
+        console.print(f"[blue]Target:[/blue] plain (analysis-only, decorative files suppressed)")
     if supplement:
         context["supplementary_sources"] = [str(s) for s in supplement]
 
@@ -430,11 +464,21 @@ def forge(
             border_style="cyan",
         ))
 
-    # Save identity YAML with safe filename
+    # Save identity YAML — skipped for runtimes that don't load it.
     agent_id = context["identity"].metadata.id
-    yaml_path = safe_output_path(output_dir, f"{agent_id}.yaml")
-    yaml_path.write_text(identity_yaml)
-    console.print(f"[green]Identity saved:[/green] {yaml_path}")
+    _yaml_targets_skipping = {"openclaw", "plain"}
+    write_identity_yaml = (
+        keep_identity_yaml or target not in _yaml_targets_skipping
+    )
+    if write_identity_yaml:
+        yaml_path = safe_output_path(output_dir, f"{agent_id}.yaml")
+        yaml_path.write_text(identity_yaml)
+        console.print(f"[green]Identity saved:[/green] {yaml_path}")
+    else:
+        console.print(
+            f"[dim]identity.yaml suppressed (--target {target!r}; "
+            f"pass --keep-identity-yaml to override)[/dim]"
+        )
 
     # Save full agent profile SKILL.md (detailed analysis + embedded data)
     if not no_skill_file and "skill_file" in context:
