@@ -2334,5 +2334,10 @@ def serve(
         uvicorn.run(create_app(), host=host, port=port)
 
 
+from agentforge.tend.cli import register as _register_tend
+
+_register_tend(app)
+
+
 if __name__ == "__main__":
     app()
