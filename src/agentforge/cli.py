@@ -2380,9 +2380,11 @@ def serve(
 
 from agentforge.tend.cli import register as _register_tend
 from agentforge.department.cli import register as _register_department
+from agentforge.drill.cli import register as _register_drill
 
 _register_tend(app)
 _register_department(app)
+_register_drill(app)
 
 
 if __name__ == "__main__":
