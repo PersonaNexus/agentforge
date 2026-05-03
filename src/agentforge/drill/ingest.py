@@ -19,39 +19,21 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
-import yaml
-
+from agentforge.day2.frontmatter import split_frontmatter as _split_frontmatter
+from agentforge.day2.safe_io import (
+    FileTooLargeError,
+    read_text_capped,
+    walk_files_no_symlinks,
+)
 from agentforge.drill.models import SkillDigest, SkillInventory
 
 
-_FRONTMATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---\s*\n?(.*)\Z", re.DOTALL)
 _BACKTICK_REF_RE = re.compile(r"`([A-Za-z0-9_./\-]+\.[A-Za-z0-9]+)`")
 _LINK_REF_RE = re.compile(r"\]\(([^)]+)\)")
-# Heuristic: tool-shaped tokens — TitleCase identifiers and common CLI names.
-_TOOL_TOKEN_RE = re.compile(r"\b([A-Z][a-zA-Z0-9_]+|[a-z][a-z0-9_-]+)\b")
 
 
 def _sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-
-def _split_frontmatter(text: str) -> tuple[dict, str, list[str]]:
-    """Return (frontmatter_dict, body, notes)."""
-    notes: list[str] = []
-    m = _FRONTMATTER_RE.match(text)
-    if not m:
-        return {}, text, notes
-    raw = m.group(1)
-    body = m.group(2)
-    try:
-        fm = yaml.safe_load(raw) or {}
-        if not isinstance(fm, dict):
-            notes.append("frontmatter is not a mapping; ignored")
-            fm = {}
-    except yaml.YAMLError as exc:
-        notes.append(f"frontmatter YAML parse failed: {exc}")
-        fm = {}
-    return fm, body, notes
 
 
 def _normalize_allowed_tools(value: object) -> list[str]:
@@ -99,13 +81,15 @@ def _detect_declared_tools(body: str, allowed_tools: list[str]) -> list[str]:
 
 
 def _walk_files(skill_folder: Path) -> tuple[list[str], int, int]:
-    """Return (relative file paths excluding SKILL.md, file_count, total_bytes)."""
+    """Return (relative file paths excluding SKILL.md, file_count, total_bytes).
+
+    Skips symlinks at every level (security: avoid metadata leakage from
+    symlinks pointing outside the skill folder).
+    """
     rels: list[str] = []
     total_bytes = 0
     file_count = 0
-    for p in sorted(skill_folder.rglob("*")):
-        if not p.is_file():
-            continue
+    for p in walk_files_no_symlinks(skill_folder):
         if p.name.startswith("."):
             continue
         try:
@@ -116,7 +100,7 @@ def _walk_files(skill_folder: Path) -> tuple[list[str], int, int]:
         rel = str(p.relative_to(skill_folder))
         if rel != "SKILL.md":
             rels.append(rel)
-    return rels, file_count, total_bytes
+    return sorted(rels), file_count, total_bytes
 
 
 def ingest_skill_folder(skill_folder: Path, root: Path) -> SkillDigest:
@@ -132,7 +116,15 @@ def ingest_skill_folder(skill_folder: Path, root: Path) -> SkillDigest:
             notes=["SKILL.md missing"],
         )
 
-    raw = skill_md.read_text(encoding="utf-8", errors="replace")
+    try:
+        raw = read_text_capped(skill_md)
+    except FileTooLargeError as exc:
+        return SkillDigest(
+            slug=skill_folder.name,
+            path=str(skill_folder.relative_to(root)),
+            has_skill_md=False,
+            notes=[f"SKILL.md skipped: {exc}"],
+        )
     fm, body, fm_notes = _split_frontmatter(raw)
     notes.extend(fm_notes)
 

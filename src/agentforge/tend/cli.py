@@ -11,6 +11,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from agentforge.day2.cli_validators import validate_dir
 from agentforge.tend.ab import (
     auto_scenario_set,
     list_scenario_sets,
@@ -96,7 +97,7 @@ def cmd_ingest(
     ),
 ) -> None:
     """Read an agent's persona artifacts and write a PersonaSnapshot."""
-    agent_dir = agent_dir.expanduser().resolve()
+    agent_dir = validate_dir(agent_dir, entity="agent-dir")
     snapshot = ingest(agent_dir)
 
     out_path = output or snapshot_path(agent_dir, snapshot.captured_at)
@@ -144,7 +145,7 @@ def cmd_watch(
     ),
 ) -> None:
     """Diff the two most recent snapshots and surface findings."""
-    agent_dir = agent_dir.expanduser().resolve()
+    agent_dir = validate_dir(agent_dir, entity="agent-dir")
     report = watch(agent_dir)
     md = render_report_markdown(report)
     typer.echo(md)
@@ -158,7 +159,7 @@ def cmd_snapshots(
     agent_dir: Path = typer.Argument(..., help="Path to the agent directory."),
 ) -> None:
     """List snapshots for an agent, oldest → newest."""
-    agent_dir = agent_dir.expanduser().resolve()
+    agent_dir = validate_dir(agent_dir, entity="agent-dir")
     snaps = list_snapshots(agent_dir)
     if not snaps:
         console.print(f"[dim]no snapshots under {agent_dir}/.tend/snapshots/[/dim]")
@@ -195,7 +196,7 @@ def cmd_ab(
     ),
 ) -> None:
     """A/B compare a current SOUL vs a proposed variant on scenarios."""
-    agent_dir = agent_dir.expanduser().resolve()
+    agent_dir = validate_dir(agent_dir, entity="agent-dir")
     variant = variant.expanduser().resolve()
     soul_path = agent_dir / "SOUL.md"
     if not soul_path.is_file():
@@ -275,7 +276,7 @@ def cmd_version_log(
     agent_dir: Path = typer.Argument(..., help="Path to the agent directory."),
 ) -> None:
     """Show the SOUL version log for an agent."""
-    agent_dir = agent_dir.expanduser().resolve()
+    agent_dir = validate_dir(agent_dir, entity="agent-dir")
     entries = load_versions(agent_dir)
     typer.echo(render_log(entries))
 
@@ -286,7 +287,7 @@ def cmd_version_note(
     note: str = typer.Argument(..., help="Free-form note to attach to the latest version."),
 ) -> None:
     """Attach a note to the most recent SOUL version entry."""
-    agent_dir = agent_dir.expanduser().resolve()
+    agent_dir = validate_dir(agent_dir, entity="agent-dir")
     entry = annotate_latest(agent_dir, note)
     if entry is None:
         console.print("[yellow]no version entries yet — run `tend ingest` first[/yellow]")
