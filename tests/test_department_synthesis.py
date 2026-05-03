@@ -161,6 +161,25 @@ def test_conductor_skill_md_lists_handoffs():
 # --- readme ---
 
 
+def test_render_readme_brief_failure_falls_back_with_warning():
+    """When the LLM brief writer raises, README still returns deterministic
+    base content and a warning is emitted (no silent swallow)."""
+    corpus = load_corpus(FIXTURE_ROOT)
+    extractions = {e.role_id: _result(e.frontmatter.title, _skill("Python")) for e in corpus}
+    landscape = cluster_skills(extractions)
+    graph = HandoffGraph(role_ids=[e.role_id for e in corpus])
+
+    failing_client = MagicMock()
+    failing_client.generate.side_effect = RuntimeError("provider blew up")
+
+    with pytest.warns(UserWarning, match="LLM team brief failed"):
+        md = render_readme("dev-team", corpus, extractions, landscape, graph,
+                          client=failing_client)
+    assert "## Team brief" not in md
+    assert "## Roster" in md
+    assert "## Layout" in md
+
+
 def test_render_readme_deterministic_includes_handoffs_and_shared():
     corpus = load_corpus(FIXTURE_ROOT)
     extractions = {

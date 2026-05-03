@@ -133,7 +133,8 @@ def cmd_synthesize(
     ),
     model: str | None = typer.Option(
         None, "--model", "-m",
-        help="LLM model for extraction + (with --use-llm) handoffs/brief.",
+        help="LLM model. Used for per-JD skill extraction (always) and, "
+             "with --use-llm, for handoff detection + README team brief.",
     ),
     no_cache: bool = typer.Option(
         False, "--no-cache",
@@ -143,6 +144,8 @@ def cmd_synthesize(
     """Phase 1.1: synthesize a coordinated multi-agent team from a JD corpus."""
     jd_folder = jd_folder.expanduser().resolve()
     output_dir = output_dir.expanduser().resolve()
+    if not jd_folder.is_dir():
+        raise typer.BadParameter(f"jd-folder does not exist or is not a directory: {jd_folder}")
     if target not in {"claude-code", "plain", "openclaw"}:
         raise typer.BadParameter(
             f"--target must be one of claude-code, plain, openclaw (got {target!r})"

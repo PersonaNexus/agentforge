@@ -7,7 +7,11 @@ Two modes:
 
 from __future__ import annotations
 
+import logging
+import warnings
 from typing import TYPE_CHECKING
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from agentforge.corpus import Corpus
@@ -142,20 +146,22 @@ def render_readme(
         return base
     try:
         brief = _llm_team_brief(department_name, corpus, extractions, graph, client)
-    except Exception:
-        # Don't fail the whole synthesize on a brief-writer hiccup.
+    except Exception as exc:
+        # Don't fail the whole synthesize on a brief-writer hiccup, but make
+        # the failure visible — silent swallow hides regressions in CI.
+        logger.warning("LLM team brief failed: %r — falling back to base README.", exc)
+        warnings.warn(
+            f"LLM team brief failed ({exc!r}); continuing without it.",
+            stacklevel=2,
+        )
         return base
     if not brief:
         return base
-    # Insert the brief right after the title.
+    # Insert the brief right after the title — guard against non-standard
+    # content where the first line isn't a markdown H1.
     lines = base.split("\n")
-    title_idx = 0
-    out: list[str] = []
-    for i, line in enumerate(lines):
-        out.append(line)
-        if i == title_idx:
-            out.append("")
-            out.append("## Team brief")
-            out.append("")
-            out.append(brief)
+    if not lines or not lines[0].startswith("#"):
+        return base
+    out: list[str] = [lines[0], "", "## Team brief", "", brief]
+    out.extend(lines[1:])
     return "\n".join(out)
