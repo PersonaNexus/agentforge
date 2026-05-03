@@ -309,6 +309,84 @@ class TestForgeDefaultMode:
         skill_files = list(tmp_path.glob("*_SKILL.md"))
         assert len(skill_files) == 0
 
+    @patch("agentforge.cli._make_client")
+    def test_forge_target_plain_skips_identity_yaml(self, mock_make_client, tmp_path):
+        """`--target plain` writes no identity.yaml by default."""
+        mock_client = MagicMock()
+        mock_make_client.return_value = mock_client
+
+        mock_extractor = MagicMock()
+        mock_extractor.extract.return_value = _mock_extraction()
+
+        with patch("agentforge.extraction.skill_extractor.SkillExtractor", return_value=mock_extractor):
+            result = runner.invoke(app, [
+                "forge",
+                str(FIXTURES_DIR / "senior_data_engineer.txt"),
+                "--quick",
+                "--target", "plain",
+                "--output-dir", str(tmp_path),
+            ])
+
+        assert result.exit_code == 0
+        yaml_files = list(tmp_path.glob("*.yaml"))
+        assert yaml_files == []
+        assert "identity.yaml suppressed" in result.output
+
+    @patch("agentforge.cli._make_client")
+    def test_forge_target_plain_keep_identity_yaml(self, mock_make_client, tmp_path):
+        """`--target plain --keep-identity-yaml` re-enables the yaml write."""
+        mock_client = MagicMock()
+        mock_make_client.return_value = mock_client
+
+        mock_extractor = MagicMock()
+        mock_extractor.extract.return_value = _mock_extraction()
+
+        with patch("agentforge.extraction.skill_extractor.SkillExtractor", return_value=mock_extractor):
+            result = runner.invoke(app, [
+                "forge",
+                str(FIXTURES_DIR / "senior_data_engineer.txt"),
+                "--quick",
+                "--target", "plain",
+                "--keep-identity-yaml",
+                "--output-dir", str(tmp_path),
+            ])
+
+        assert result.exit_code == 0
+        yaml_files = list(tmp_path.glob("*.yaml"))
+        assert len(yaml_files) == 1
+
+    def test_forge_target_unknown_value_rejected(self, tmp_path):
+        """An unrecognized --target value fails fast with a clear message."""
+        result = runner.invoke(app, [
+            "forge",
+            str(FIXTURES_DIR / "senior_data_engineer.txt"),
+            "--target", "bogus",
+            "--output-dir", str(tmp_path),
+        ])
+        assert result.exit_code == 1
+        assert "Unknown --target" in result.output
+
+    @patch("agentforge.cli._make_client")
+    def test_forge_target_default_writes_identity_yaml(self, mock_make_client, tmp_path):
+        """Default target (claude-code) still writes identity.yaml — back-compat."""
+        mock_client = MagicMock()
+        mock_make_client.return_value = mock_client
+
+        mock_extractor = MagicMock()
+        mock_extractor.extract.return_value = _mock_extraction()
+
+        with patch("agentforge.extraction.skill_extractor.SkillExtractor", return_value=mock_extractor):
+            result = runner.invoke(app, [
+                "forge",
+                str(FIXTURES_DIR / "senior_data_engineer.txt"),
+                "--quick",
+                "--output-dir", str(tmp_path),
+            ])
+
+        assert result.exit_code == 0
+        yaml_files = list(tmp_path.glob("*.yaml"))
+        assert len(yaml_files) == 1
+
 
 class TestExtractVerbose:
     @patch("agentforge.cli._make_client")
