@@ -30,3 +30,7 @@ htmlcov/
 .claude/*
 !.claude/hooks/
 !.claude/settings.json
+
+# AgentForge runtime caches and per-target output
+.agentforge/
+.tend/
