@@ -2379,8 +2379,10 @@ def serve(
 
 
 from agentforge.tend.cli import register as _register_tend
+from agentforge.department.cli import register as _register_department
 
 _register_tend(app)
+_register_department(app)
 
 
 if __name__ == "__main__":
