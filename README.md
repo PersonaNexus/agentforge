@@ -2,9 +2,11 @@
 
 > **Repo/Product map:** AgentForge is the product, Python package, and CLI (`agentforge`). The public GitHub repository is [`PersonaNexus/agentforge`](https://github.com/PersonaNexus/agentforge). It was formerly named `AgentSkillFactory`; GitHub redirects old links. See [docs/repo-product-map.md](docs/repo-product-map.md) for the ecosystem map and naming policy.
 
-Transform job descriptions, role descriptions, and operating context into deployable AI agent blueprints via [PersonaNexus](https://github.com/PersonaNexus/personanexus).
+Transform job descriptions, role descriptions, and operating context into deployable AI agent blueprints via [PersonaNexus](https://github.com/PersonaNexus/personanexus) — and keep them healthy after they ship.
 
 AgentForge reads a job description (txt, md, pdf, docx), extracts skills and role metadata with an LLM, maps them to [PersonaNexus](https://github.com/PersonaNexus/personanexus) personality traits, and outputs a ready-to-use agent identity — including Claude Code skill folders you can drop straight into `.claude/skills/`.
+
+Beyond the one-shot factory, AgentForge ships a **day-2+ tooling line** for the lifecycle that starts after the agent is live: persona drift detection, skill-folder maintenance, multi-agent team synthesis, and JD-corpus observability. See [Day-2+ tooling](#day-2-tooling) below or the [full design doc](docs/day2-products.md).
 
 ### PersonaNexus Ecosystem
 
@@ -186,6 +188,64 @@ agentforge test job_posting.txt
 
 Generates scenarios from trigger mappings, responsibilities, and edge cases. Evaluates responses with LLM-as-judge scoring and produces a pass/fail report.
 
+## Day-2+ tooling
+
+The one-shot `forge` flow stops after the agent ships. Day-2+ commands keep agents and skill folders healthy over time, on a single operating model: **observe → diagnose → propose → test → version**. All four products are deterministic by default; LLM is reserved for experimentation and proposal surfaces.
+
+### `tend` — persona maintenance
+
+Read-only on `SOUL.md`. Snapshots persona artifacts, diffs them, and runs A/B tests against scenario sets with LLM-as-judge.
+
+```bash
+agentforge tend ingest <agent-dir>             # snapshot persona artifacts
+agentforge tend watch <agent-dir>              # diff snapshots, surface drift + promotion candidates
+agentforge tend ab <agent-dir> -v variant.md   # A/B test a SOUL variant on scenarios
+agentforge tend version <agent-dir>            # SOUL evolution log (versions.jsonl)
+```
+
+All output goes to `<agent>/.tend/`. Snapshots are deterministic — re-ingesting an unchanged agent produces an identical-modulo-timestamp snapshot.
+
+### `drill` — skill-folder maintenance
+
+Counterpart to Tend on the *capability* surface. Auto-detects single-skill folders vs `.claude/skills/`-shaped parents.
+
+```bash
+agentforge drill ingest <skill-dir>     # snapshot a skill directory
+agentforge drill scan <skill-dir>       # deterministic diagnostics
+agentforge drill watch <skill-dir>      # diff snapshots
+agentforge drill version <skill-dir>    # inventory evolution log
+```
+
+`drill scan` flags four classes of issue: **missing_file** (folder lacks SKILL.md), **broken_reference** (body cites a path that's not on disk), **bloat** (body word count above threshold), **overlap** (Jaccard similarity between two skill descriptions above threshold), **tool_sprawl** (`allowed-tools` count above threshold or stale entries not mentioned in body). Thresholds are configurable per-run.
+
+### `department` — multi-agent team synthesis
+
+Synthesize a coordinated team from a folder of JDs (one per role, with YAML frontmatter).
+
+```bash
+agentforge department scan <jd-folder>          # list the corpus, no LLM
+agentforge department analyze <jd-folder>       # extract + cluster skills, write report
+agentforge department synthesize <jd-folder> -o <out>            # full team
+agentforge department synthesize <jd-folder> -o <out> --use-llm  # + LLM handoff judge + team brief
+```
+
+`synthesize` produces per-role identity + decomposed SKILL.md, an `_shared/skills/` library for clusters spanning ≥2 roles, an `_conductor/` agent with a baked-in routing table, an `orchestration.yaml` handoff graph, and a README. With `--use-llm` the handoff edges are LLM-judged and the README gains a written team brief.
+
+### `market` — JD-corpus observability
+
+Aggregate statistics over a JD corpus + agent ↔ market gap analysis.
+
+```bash
+agentforge market trends <jd-folder>                                   # top skills, breakdowns, recency split
+agentforge market gap <jd-folder> --skill-dir <agent-skills>           # coverage score + market_only / agent_only / shared
+```
+
+`trends` surfaces top skills by frequency and role-share, breakdowns by category / domain / seniority, and a rising-vs-falling skills split when JDs carry `date:` frontmatter. `gap` compares an agent's drill SkillInventory to the corpus's clustered SkillLandscape and emits a coverage score over load-bearing market skills.
+
+### Shared substrate
+
+All four products ride on `agentforge.day2/` — a thin shared package for git-state probes, JSONL evolution logs, frontmatter parsing, finding-list markdown, CLI directory validation, and size-capped + symlink-safe file IO. Designed so future day-2+ products reuse it instead of mirroring helpers.
+
 ## Quality & safety tools
 
 Analyze, lint, and validate generated skills:
@@ -258,7 +318,7 @@ Supported sources: Slack JSON exports, git log output, runbook/SOP markdown, mee
 
 ```
 src/agentforge/
-├── cli.py                  # Typer CLI
+├── cli.py                  # Typer CLI (forge + day-2+ sub-apps)
 ├── cli_wizard.py           # Interactive wizard
 ├── mcp_server.py           # MCP tool server
 ├── extraction/             # LLM-powered skill extraction
@@ -271,6 +331,12 @@ src/agentforge/
 ├── analysis/               # Gap analysis, skill review, guardrails, linting, cost, prompt size
 ├── composition/            # Multi-agent team forging, conductor generation
 ├── testing/                # Skill validation, scenario generation, evaluation
+├── corpus/                 # JD-corpus loader (shared by department + market)
+├── tend/                   # Day-2+ persona maintenance
+├── drill/                  # Day-2+ skill-folder maintenance
+├── department/             # Day-2+ multi-agent team synthesis from JD corpus
+├── market/                 # Day-2+ JD-corpus observability + agent gap
+├── day2/                   # Shared substrate for tend/drill/department/market
 ├── web/                    # FastAPI app, routes, templates
 └── templates/              # Culture templates, prompts
 ```
