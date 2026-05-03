@@ -2,8 +2,7 @@
 
 Every time ``tend ingest`` runs, ``record_if_changed`` appends a line to
 ``<agent>/.tend/versions.jsonl`` if the SOUL.md sha has changed since the
-prior recorded version. The log is the persona's history: who edited the
-SOUL, when, and what shifted.
+prior recorded version. The log is the persona's history.
 
 Read-only on SOUL itself. No revert command in MVP — versions.jsonl is a
 ledger, not a version-control system. To roll back, the user uses git.
@@ -11,13 +10,18 @@ ledger, not a version-control system. To roll back, the user uses git.
 
 from __future__ import annotations
 
-import json
-import subprocess
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
+from agentforge.day2.vcs import git_state
+from agentforge.day2.version_log import (
+    annotate_latest as _annotate_latest,
+    commit_label,
+    load_versions as _load_versions,
+    render_version_log,
+)
 from agentforge.tend.models import PersonaSnapshot
 
 
@@ -39,66 +43,8 @@ def _versions_path(agent_dir: Path) -> Path:
     return agent_dir / ".tend" / "versions.jsonl"
 
 
-def _try_rev_parse(cwd: Path) -> str | None:
-    try:
-        return subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=cwd,
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=2,
-        ).stdout.strip() or None
-    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
-        return None
-
-
-def _git_state(agent_dir: Path) -> tuple[str | None, bool | None]:
-    """Return (commit_sha, soul_is_dirty), walking up if the nearest repo
-    has no commits yet (e.g. a stray nested .git with empty history).
-    """
-    commit = _try_rev_parse(agent_dir)
-    cwd_for_status = agent_dir
-    if commit is None:
-        # Walk up parents looking for a repo with commits.
-        for parent in agent_dir.parents:
-            commit = _try_rev_parse(parent)
-            if commit is not None:
-                cwd_for_status = parent
-                break
-    if commit is None:
-        return None, None
-    soul = agent_dir / "SOUL.md"
-    if not soul.is_file():
-        return commit, None
-    try:
-        status = subprocess.run(
-            ["git", "status", "--porcelain", "--", str(soul)],
-            cwd=cwd_for_status,
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=2,
-        ).stdout.strip()
-        return commit, bool(status)
-    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
-        return commit, None
-
-
 def load_versions(agent_dir: Path) -> list[VersionEntry]:
-    p = _versions_path(agent_dir)
-    if not p.is_file():
-        return []
-    out: list[VersionEntry] = []
-    for line in p.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            out.append(VersionEntry.model_validate(json.loads(line)))
-        except (json.JSONDecodeError, ValueError):
-            continue
-    return out
+    return _load_versions(_versions_path(agent_dir), VersionEntry)
 
 
 def _summarize_delta(prior: VersionEntry, snapshot: PersonaSnapshot) -> str:
@@ -116,10 +62,7 @@ def record_if_changed(
     snapshot: PersonaSnapshot,
     snapshot_path: Path,
 ) -> VersionEntry | None:
-    """Append a VersionEntry iff the SOUL sha differs from the latest entry.
-
-    Returns the new entry, or None if SOUL is unchanged (or no SOUL was found).
-    """
+    """Append a VersionEntry iff the SOUL sha differs from the latest entry."""
     soul_artifact = next(
         (a for a in snapshot.artifacts if a.path == "SOUL.md"), None
     )
@@ -129,9 +72,9 @@ def record_if_changed(
     prior = load_versions(agent_dir)
     latest = prior[-1] if prior else None
     if latest is not None and latest.soul_sha256 == soul_artifact.sha256:
-        return None  # no change
+        return None
 
-    git_commit, dirty = _git_state(agent_dir)
+    git_commit, dirty = git_state(agent_dir, dirty_check_path=agent_dir / "SOUL.md")
     summary = _summarize_delta(latest, snapshot) if latest else "first observation"
     entry = VersionEntry(
         recorded_at=snapshot.captured_at,
@@ -152,37 +95,27 @@ def record_if_changed(
     return entry
 
 
+def _row(i: int, e: VersionEntry) -> list[str]:
+    return [
+        f"## v{i}  ·  {e.recorded_at.isoformat(timespec='seconds')}  ·  "
+        f"sha `{e.soul_sha256[:12]}`",
+        "",
+        f"- git: `{commit_label(e.git_commit, e.git_dirty)}`",
+        f"- soul lines: {e.soul_line_count}",
+        f"- principles: {e.principles_count} · guardrails: {e.guardrails_count}",
+        *([f"- delta: {e.summary}"] if e.summary else []),
+        *([f"- note: {e.note}"] if e.note else []),
+    ]
+
+
 def render_log(entries: list[VersionEntry]) -> str:
-    if not entries:
-        return "_no recorded SOUL versions_\n"
-    lines = ["# tend version log", ""]
-    for i, e in enumerate(entries, start=1):
-        commit = (e.git_commit[:8] + ("*" if e.git_dirty else "")) if e.git_commit else "—"
-        lines.append(
-            f"## v{i}  ·  {e.recorded_at.isoformat(timespec='seconds')}  ·  "
-            f"sha `{e.soul_sha256[:12]}`"
-        )
-        lines.append("")
-        lines.append(f"- git: `{commit}`")
-        lines.append(f"- soul lines: {e.soul_line_count}")
-        lines.append(f"- principles: {e.principles_count} · guardrails: {e.guardrails_count}")
-        if e.summary:
-            lines.append(f"- delta: {e.summary}")
-        if e.note:
-            lines.append(f"- note: {e.note}")
-        lines.append("")
-    return "\n".join(lines) + "\n"
+    return render_version_log(
+        entries,
+        title="tend version log",
+        empty_text="_no recorded SOUL versions_",
+        row_renderer=_row,
+    )
 
 
 def annotate_latest(agent_dir: Path, note: str) -> VersionEntry | None:
-    """Attach a free-form note to the most recent version entry."""
-    entries = load_versions(agent_dir)
-    if not entries:
-        return None
-    entries[-1] = entries[-1].model_copy(update={"note": note})
-    p = _versions_path(agent_dir)
-    p.write_text(
-        "\n".join(e.model_dump_json() for e in entries) + "\n",
-        encoding="utf-8",
-    )
-    return entries[-1]
+    return _annotate_latest(_versions_path(agent_dir), VersionEntry, note)

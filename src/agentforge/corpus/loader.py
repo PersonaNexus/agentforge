@@ -5,35 +5,28 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import yaml
-
 from agentforge.corpus.models import Corpus, JDEntry, JDFrontmatter
-
-# Pattern for a YAML frontmatter block at the very start of a file:
-# ---\n<yaml>\n---\n<rest>
-_FRONTMATTER_RE = re.compile(
-    r"\A---\s*\n(?P<yaml>.*?)\n---\s*\n?(?P<body>.*)\Z",
-    re.DOTALL,
+from agentforge.day2.frontmatter import (
+    FRONTMATTER_RE as _FRONTMATTER_RE,
+    FrontmatterParseError,
+    split_frontmatter,
 )
+from agentforge.day2.safe_io import read_text_capped
 
 
 def parse_frontmatter(text: str) -> tuple[JDFrontmatter | None, str]:
     """Split a markdown file into (frontmatter, body).
 
-    Returns ``(None, text)`` when the file has no frontmatter block —
-    callers can then decide whether to error or fall back to a default.
+    Returns ``(None, text)`` when the file has no frontmatter block.
+    Raises ``ValueError`` on malformed YAML or non-mapping content
+    (corpus's strict contract).
     """
-    m = _FRONTMATTER_RE.match(text)
-    if not m:
+    if not _FRONTMATTER_RE.match(text):
         return None, text
-    raw = m.group("yaml")
-    body = m.group("body")
     try:
-        data = yaml.safe_load(raw) or {}
-    except yaml.YAMLError as e:
-        raise ValueError(f"invalid YAML frontmatter: {e}") from e
-    if not isinstance(data, dict):
-        raise ValueError("frontmatter must be a YAML mapping at the top level")
+        data, body, _ = split_frontmatter(text, strict=True)
+    except FrontmatterParseError as e:
+        raise ValueError(str(e)) from e
     fm = JDFrontmatter.model_validate(data)
     return fm, body.strip() + "\n"
 
@@ -45,12 +38,7 @@ def _slug(name: str) -> str:
 
 
 def load_corpus(directory: Path) -> Corpus:
-    """Load every ``*.md`` JD in ``directory`` into a Corpus.
-
-    Files without a frontmatter block raise ``ValueError`` — the corpus
-    contract is "frontmatter is required." Files with malformed YAML or
-    missing required fields likewise raise.
-    """
+    """Load every ``*.md`` JD in ``directory`` into a Corpus."""
     directory = Path(directory).expanduser().resolve()
     if not directory.is_dir():
         raise FileNotFoundError(f"corpus directory not found: {directory}")
@@ -58,7 +46,7 @@ def load_corpus(directory: Path) -> Corpus:
     md_files = sorted(directory.glob("*.md"))
     entries: list[JDEntry] = []
     for path in md_files:
-        text = path.read_text(encoding="utf-8")
+        text = read_text_capped(path)
         fm, body = parse_frontmatter(text)
         if fm is None:
             raise ValueError(

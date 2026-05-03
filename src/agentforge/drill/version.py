@@ -2,12 +2,9 @@
 
 Every time ``drill ingest`` runs, ``record_if_changed`` appends a line
 to ``<skill-dir>/.drill/versions.jsonl`` if the inventory's content
-fingerprint has changed since the prior recorded version.
-
-The fingerprint is the sorted concatenation of every skill's
-``body_sha256`` — so a skill body edit, addition, or removal all
-produce a new fingerprint, while a no-op re-ingest produces no new
-entry.
+fingerprint has changed since the prior recorded version. The
+fingerprint is the sorted concat of every skill's ``body_sha256`` —
+edits, additions, and removals all change it.
 
 Mirrors ``tend version`` in shape and intent: an append-only ledger,
 not a VCS. Roll back via git on the underlying skill files.
@@ -16,13 +13,18 @@ not a VCS. Roll back via git on the underlying skill files.
 from __future__ import annotations
 
 import hashlib
-import json
-import subprocess
 from datetime import datetime
 from pathlib import Path
 
 from pydantic import BaseModel
 
+from agentforge.day2.vcs import git_state
+from agentforge.day2.version_log import (
+    annotate_latest as _annotate_latest,
+    commit_label,
+    load_versions as _load_versions,
+    render_version_log,
+)
 from agentforge.drill.models import SkillInventory
 
 
@@ -41,46 +43,6 @@ class VersionEntry(BaseModel):
 
 def _versions_path(skill_dir: Path) -> Path:
     return skill_dir / ".drill" / "versions.jsonl"
-
-
-def _try_rev_parse(cwd: Path) -> str | None:
-    try:
-        return subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            cwd=cwd,
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=2,
-        ).stdout.strip() or None
-    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
-        return None
-
-
-def _git_state(skill_dir: Path) -> tuple[str | None, bool | None]:
-    """Return (commit_sha, skill_dir_is_dirty)."""
-    commit = _try_rev_parse(skill_dir)
-    cwd_for_status = skill_dir
-    if commit is None:
-        for parent in skill_dir.parents:
-            commit = _try_rev_parse(parent)
-            if commit is not None:
-                cwd_for_status = parent
-                break
-    if commit is None:
-        return None, None
-    try:
-        status = subprocess.run(
-            ["git", "status", "--porcelain", "--", str(skill_dir)],
-            cwd=cwd_for_status,
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=2,
-        ).stdout.strip()
-        return commit, bool(status)
-    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
-        return commit, None
 
 
 def fingerprint(inventory: SkillInventory) -> str:
@@ -102,19 +64,7 @@ def fingerprint(inventory: SkillInventory) -> str:
 
 
 def load_versions(skill_dir: Path) -> list[VersionEntry]:
-    p = _versions_path(skill_dir)
-    if not p.is_file():
-        return []
-    out: list[VersionEntry] = []
-    for line in p.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            out.append(VersionEntry.model_validate(json.loads(line)))
-        except (json.JSONDecodeError, ValueError):
-            continue
-    return out
+    return _load_versions(_versions_path(skill_dir), VersionEntry)
 
 
 def _summarize_delta(prior: VersionEntry, inventory: SkillInventory) -> str:
@@ -142,7 +92,7 @@ def record_if_changed(
     if latest is not None and latest.inventory_fingerprint == fp:
         return None
 
-    git_commit, dirty = _git_state(skill_dir)
+    git_commit, dirty = git_state(skill_dir)
     summary = _summarize_delta(latest, inventory) if latest else "first observation"
     entry = VersionEntry(
         recorded_at=inventory.captured_at,
@@ -162,36 +112,26 @@ def record_if_changed(
     return entry
 
 
+def _row(i: int, e: VersionEntry) -> list[str]:
+    return [
+        f"## v{i}  ·  {e.recorded_at.isoformat(timespec='seconds')}  ·  "
+        f"fp `{e.inventory_fingerprint[:12]}`",
+        "",
+        f"- git: `{commit_label(e.git_commit, e.git_dirty)}`",
+        f"- skills: {e.skill_count} · words: {e.total_words}",
+        *([f"- delta: {e.summary}"] if e.summary else []),
+        *([f"- note: {e.note}"] if e.note else []),
+    ]
+
+
 def render_log(entries: list[VersionEntry]) -> str:
-    if not entries:
-        return "_no recorded skill versions_\n"
-    lines = ["# drill version log", ""]
-    for i, e in enumerate(entries, start=1):
-        commit = (e.git_commit[:8] + ("*" if e.git_dirty else "")) if e.git_commit else "—"
-        lines.append(
-            f"## v{i}  ·  {e.recorded_at.isoformat(timespec='seconds')}  ·  "
-            f"fp `{e.inventory_fingerprint[:12]}`"
-        )
-        lines.append("")
-        lines.append(f"- git: `{commit}`")
-        lines.append(f"- skills: {e.skill_count} · words: {e.total_words}")
-        if e.summary:
-            lines.append(f"- delta: {e.summary}")
-        if e.note:
-            lines.append(f"- note: {e.note}")
-        lines.append("")
-    return "\n".join(lines) + "\n"
+    return render_version_log(
+        entries,
+        title="drill version log",
+        empty_text="_no recorded skill versions_",
+        row_renderer=_row,
+    )
 
 
 def annotate_latest(skill_dir: Path, note: str) -> VersionEntry | None:
-    """Attach a free-form note to the most recent version entry."""
-    entries = load_versions(skill_dir)
-    if not entries:
-        return None
-    entries[-1] = entries[-1].model_copy(update={"note": note})
-    p = _versions_path(skill_dir)
-    p.write_text(
-        "\n".join(e.model_dump_json() for e in entries) + "\n",
-        encoding="utf-8",
-    )
-    return entries[-1]
+    return _annotate_latest(_versions_path(skill_dir), VersionEntry, note)

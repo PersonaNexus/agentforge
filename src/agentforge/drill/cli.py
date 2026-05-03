@@ -10,6 +10,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from agentforge.day2.cli_validators import validate_dir
 from agentforge.drill import ingest as ingest_mod
 from agentforge.drill import scan as scan_mod
 from agentforge.drill import version as version_mod
@@ -25,10 +26,7 @@ console = Console()
 
 
 def _validate_skill_dir(skill_dir: Path) -> Path:
-    skill_dir = skill_dir.expanduser().resolve()
-    if not skill_dir.is_dir():
-        raise typer.BadParameter(f"skill-dir does not exist or is not a directory: {skill_dir}")
-    return skill_dir
+    return validate_dir(skill_dir, entity="skill-dir")
 
 
 def _write_snapshot(inventory: SkillInventory, skill_dir: Path) -> Path:

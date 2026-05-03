@@ -20,6 +20,7 @@ from pathlib import Path
 
 import yaml
 
+from agentforge.day2.safe_io import FileTooLargeError, read_text_capped
 from agentforge.tend.models import (
     ArtifactDigest,
     PersonaSnapshot,
@@ -253,8 +254,8 @@ def _voice_fingerprint(text: str) -> VoiceFingerprint:
 def _parse_yaml_persona(path: Path) -> tuple[dict, list[str], list[str]]:
     """Return (personality_dict, principles, guardrails) from a yaml persona."""
     try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    except yaml.YAMLError:
+        data = yaml.safe_load(read_text_capped(path)) or {}
+    except (yaml.YAMLError, FileTooLargeError):
         return {}, [], []
     if not isinstance(data, dict):
         return {}, [], []
@@ -300,8 +301,8 @@ def _scan_memory(memory_dir: Path, days: int = 7) -> list[str]:
     out: list[str] = []
     for f in files:
         try:
-            text = f.read_text(encoding="utf-8", errors="replace")
-        except OSError:
+            text = read_text_capped(f)
+        except (OSError, FileTooLargeError):
             continue
         for line in text.splitlines():
             stripped = line.strip().lstrip("-*> ").strip()
@@ -328,11 +329,16 @@ def ingest(agent_dir: Path, captured_at: datetime | None = None) -> PersonaSnaps
     guardrails: list[str] = []
     voice: VoiceFingerprint | None = None
     if soul_path.is_file():
-        soul_text = soul_path.read_text(encoding="utf-8", errors="replace")
-        sections = _parse_soul_sections(soul_text)
-        principles = _extract_principles(sections)
-        guardrails = _extract_guardrails(sections)
-        voice = _voice_fingerprint(soul_text)
+        try:
+            soul_text = read_text_capped(soul_path)
+        except FileTooLargeError as exc:
+            notes.append(f"SOUL.md skipped: {exc}")
+            soul_text = ""
+        if soul_text:
+            sections = _parse_soul_sections(soul_text)
+            principles = _extract_principles(sections)
+            guardrails = _extract_guardrails(sections)
+            voice = _voice_fingerprint(soul_text)
     else:
         notes.append("no SOUL.md found")
 

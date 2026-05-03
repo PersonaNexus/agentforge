@@ -22,6 +22,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
+from agentforge.day2.finding_render import render_findings_markdown
 from agentforge.drill.models import ScanFinding, ScanReport, SkillInventory
 
 
@@ -208,44 +209,17 @@ def scan(
 
 def render_report_markdown(report: ScanReport) -> str:
     """Render a scan report as human-readable markdown."""
-    by_kind: dict[str, list[ScanFinding]] = {}
-    for f in report.findings:
-        by_kind.setdefault(f.kind, []).append(f)
-
-    sev_count = {"critical": 0, "warn": 0, "info": 0}
-    for f in report.findings:
-        sev_count[f.severity] = sev_count.get(f.severity, 0) + 1
-
-    lines = [
-        f"# drill scan — {report.skill_dir}",
-        "",
-        f"_scanned: {report.scanned_at.isoformat(timespec='seconds')}_  "
-        f"_inventory: {report.inventory_captured_at.isoformat(timespec='seconds')}_",
-        "",
-        f"**{len(report.findings)} finding(s)** — "
-        f"critical: {sev_count.get('critical', 0)}, "
-        f"warn: {sev_count.get('warn', 0)}, "
-        f"info: {sev_count.get('info', 0)}",
-        "",
-    ]
-    if not report.findings:
-        lines.append("_No issues detected._\n")
-        return "\n".join(lines)
-
-    kind_order = ["missing_file", "broken_reference", "bloat", "overlap", "tool_sprawl"]
-    for kind in kind_order + sorted(by_kind.keys() - set(kind_order)):
-        items = by_kind.get(kind)
-        if not items:
-            continue
-        lines.append(f"## {kind} ({len(items)})")
-        lines.append("")
-        for f in items:
-            scope = f"`{f.skill}` — " if f.skill else ""
-            lines.append(f"- **[{f.severity}]** {scope}{f.message}")
-            if f.detail:
-                lines.append(f"  - _{f.detail}_")
-        lines.append("")
-    return "\n".join(lines)
+    return render_findings_markdown(
+        title=f"drill scan — {report.skill_dir}",
+        metadata_lines=[
+            f"_scanned: {report.scanned_at.isoformat(timespec='seconds')}_  "
+            f"_inventory: {report.inventory_captured_at.isoformat(timespec='seconds')}_",
+        ],
+        findings=report.findings,
+        empty_text="_No issues detected._",
+        kind_order=["missing_file", "broken_reference", "bloat", "overlap", "tool_sprawl"],
+        scope_attr="skill",
+    )
 
 
 def write_report(report: ScanReport, skill_dir: Path) -> Path:

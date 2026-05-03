@@ -18,6 +18,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+from agentforge.day2.finding_render import render_findings_markdown
 from agentforge.drill.models import SkillInventory, WatchFinding, WatchReport
 
 
@@ -153,28 +154,19 @@ def watch(
 
 
 def render_report_markdown(report: WatchReport) -> str:
-    lines = [
-        f"# drill watch — {report.skill_dir}",
-        "",
-        f"_compared: {report.compared_at.isoformat(timespec='seconds')}_",
-        "",
-        f"- prior:   `{report.prior_snapshot or '(none)'}`",
-        f"- current: `{report.current_snapshot}`",
-        "",
-        f"**{len(report.findings)} finding(s)**",
-        "",
-    ]
-    if not report.findings:
-        lines.append("_No evolution detected._\n")
-        return "\n".join(lines)
-    for f in report.findings:
-        scope = f"`{f.skill}` — " if f.skill else ""
-        lines.append(f"- **[{f.severity}]** {scope}{f.message}")
-        if f.detail:
-            for d in f.detail.splitlines():
-                lines.append(f"  - {d}")
-    lines.append("")
-    return "\n".join(lines)
+    return render_findings_markdown(
+        title=f"drill watch — {report.skill_dir}",
+        metadata_lines=[
+            f"_compared: {report.compared_at.isoformat(timespec='seconds')}_",
+            "",
+            f"- prior:   `{report.prior_snapshot or '(none)'}`",
+            f"- current: `{report.current_snapshot}`",
+        ],
+        findings=report.findings,
+        empty_text="_No evolution detected._",
+        group_by_kind=False,
+        scope_attr="skill",
+    )
 
 
 def write_report(report: WatchReport, skill_dir: Path) -> Path:
