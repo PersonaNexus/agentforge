@@ -12,8 +12,10 @@ from rich.table import Table
 from agentforge.corpus import load_corpus
 from agentforge.department.synthesize import (
     analyze_directory,
+    extract_corpus,
     write_report,
 )
+from agentforge.department.synthesize_team import synthesize_team
 
 app = typer.Typer(
     name="department",
@@ -100,6 +102,105 @@ def cmd_analyze(
     )
     console.print(f"  report: [bold]{md_path}[/bold]")
     console.print(f"  json:   [bold]{json_path}[/bold]")
+
+
+@app.command("synthesize")
+def cmd_synthesize(
+    jd_folder: Path = typer.Argument(
+        ...,
+        help="Directory of JD markdown files (one per role).",
+    ),
+    output_dir: Path = typer.Option(
+        ...,
+        "--output-dir", "-o",
+        help="Where to write the synthesized department.",
+    ),
+    department_name: str | None = typer.Option(
+        None, "--name", "-n",
+        help="Display name for the department (default: corpus directory name).",
+    ),
+    target: str = typer.Option(
+        "claude-code", "--target",
+        help="Output target. 'plain' / 'openclaw' suppress identity.yaml.",
+    ),
+    keep_identity_yaml: bool = typer.Option(
+        False, "--keep-identity-yaml",
+        help="Override --target suppression and always write identity.yaml.",
+    ),
+    use_llm: bool = typer.Option(
+        False, "--use-llm",
+        help="Use the LLM for handoff detection and the README team brief.",
+    ),
+    model: str | None = typer.Option(
+        None, "--model", "-m",
+        help="LLM model. Used for per-JD skill extraction (always) and, "
+             "with --use-llm, for handoff detection + README team brief.",
+    ),
+    no_cache: bool = typer.Option(
+        False, "--no-cache",
+        help="Force re-extraction (ignore cached results).",
+    ),
+) -> None:
+    """Phase 1.1: synthesize a coordinated multi-agent team from a JD corpus."""
+    jd_folder = jd_folder.expanduser().resolve()
+    output_dir = output_dir.expanduser().resolve()
+    if not jd_folder.is_dir():
+        raise typer.BadParameter(f"jd-folder does not exist or is not a directory: {jd_folder}")
+    if target not in {"claude-code", "plain", "openclaw"}:
+        raise typer.BadParameter(
+            f"--target must be one of claude-code, plain, openclaw (got {target!r})"
+        )
+
+    from agentforge.department.synthesize import _default_extractor
+    from agentforge.llm.client import LLMClient
+
+    client = LLMClient(model=model) if model else LLMClient()
+    corpus = load_corpus(jd_folder)
+    console.print(Panel(
+        f"[cyan]synthesizing[/cyan] {jd_folder} → {output_dir}\n"
+        f"model: [bold]{client.model}[/bold] · target: [bold]{target}[/bold] · "
+        f"llm-augment: {'on' if use_llm else 'off'} · "
+        f"cache: {'off' if no_cache else 'on'}",
+        title="department synthesize",
+    ))
+
+    extract = _default_extractor(client)
+    extractions = extract_corpus(corpus, extract, use_cache=not no_cache)
+
+    artifacts = synthesize_team(
+        corpus,
+        output_dir,
+        department_name=department_name,
+        extractions=extractions,
+        client=client if use_llm else None,
+        use_llm_handoffs=use_llm,
+        use_llm_brief=use_llm,
+        target=target,
+        keep_identity_yaml=keep_identity_yaml,
+    )
+
+    table = Table(title="Synthesized roles")
+    table.add_column("Role", style="cyan")
+    table.add_column("identity.yaml", style="dim")
+    table.add_column("SKILL.md", style="dim")
+    table.add_column("Refs", justify="right")
+    for r in artifacts.role_artifacts:
+        table.add_row(
+            r.role_id,
+            "✓" if r.identity_yaml_path else "—",
+            "✓",
+            str(len(r.supplementary_paths)),
+        )
+    console.print(table)
+
+    console.print(
+        f"\n[green]✓[/green] {len(artifacts.role_artifacts)} role(s), "
+        f"[bold]{artifacts.shared_cluster_count}[/bold] shared skill(s), "
+        f"[bold]{artifacts.handoff_count}[/bold] handoff(s)."
+    )
+    console.print(f"  README:        [bold]{artifacts.readme_path}[/bold]")
+    console.print(f"  orchestration: [bold]{artifacts.orchestration_path}[/bold]")
+    console.print(f"  conductor:     [bold]{artifacts.conductor_skill_path}[/bold]")
 
 
 def register(parent: typer.Typer) -> None:
