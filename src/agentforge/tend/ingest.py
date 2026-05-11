@@ -293,8 +293,12 @@ def _scan_memory(memory_dir: Path, days: int = 7) -> list[str]:
     """Return up to ~50 promotion-candidate lines from recent memory files."""
     if not memory_dir.is_dir():
         return []
+    # Use symlink-safe iteration (consistent with drill/ingest.py's
+    # walk_files_no_symlinks pattern) so a crafted symlink can't escape the
+    # agent directory.
     files = sorted(
-        (p for p in memory_dir.glob("*.md") if p.is_file()),
+        (p for p in memory_dir.iterdir()
+         if not p.is_symlink() and p.is_file() and p.suffix == ".md"),
         key=lambda p: p.stat().st_mtime,
         reverse=True,
     )[:days]
@@ -362,10 +366,13 @@ def ingest(agent_dir: Path, captured_at: datetime | None = None) -> PersonaSnaps
             artifacts.append(_digest(p, agent_dir))
             seen_paths.add(p)
     for pattern in PERSONA_GLOBS:
+        # glob() follows symlinks; filter them out explicitly so a crafted
+        # symlink in an agent directory cannot escape the sandbox.
         for p in sorted(agent_dir.glob(pattern)):
-            if p.is_file() and p not in seen_paths:
-                artifacts.append(_digest(p, agent_dir))
-                seen_paths.add(p)
+            if p.is_symlink() or not p.is_file() or p in seen_paths:
+                continue
+            artifacts.append(_digest(p, agent_dir))
+            seen_paths.add(p)
 
     memory_signals = _scan_memory(agent_dir / "memory")
 
