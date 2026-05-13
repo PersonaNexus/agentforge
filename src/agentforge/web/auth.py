@@ -11,12 +11,28 @@ When no token is configured, all requests are allowed (backwards-compatible).
 from __future__ import annotations
 
 import hmac
-import os
 import logging
+import os
+from typing import TYPE_CHECKING, Any
 
-from fastapi import Request, HTTPException
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.responses import Response
+if TYPE_CHECKING:
+    from fastapi import Request
+    from starlette.responses import Response
+
+try:  # Optional web extras are not required for core imports/tests.
+    from fastapi import HTTPException
+    from starlette.middleware.base import BaseHTTPMiddleware
+except ModuleNotFoundError:  # pragma: no cover - exercised by core-only installs
+    BaseHTTPMiddleware = object  # type: ignore[misc,assignment]
+
+    class HTTPException(Exception):  # type: ignore[no-redef]
+        def __init__(self, status_code: int, detail: str) -> None:
+            super().__init__(detail)
+            self.status_code = status_code
+            self.detail = detail
+
+    Request = Any  # type: ignore[misc,assignment]
+    Response = Any  # type: ignore[misc,assignment]
 
 logger = logging.getLogger(__name__)
 

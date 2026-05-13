@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import os
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -206,6 +207,8 @@ class TestMCPPathValidation:
         assert ".docx" in _ALLOWED_MCP_EXTENSIONS
 
 
+@pytest.mark.web
+@pytest.mark.skipif(importlib.util.find_spec("fastapi") is None, reason="requires agentforge[web]")
 class TestUploadSizeLimits:
     def test_extract_route_has_size_check(self):
         """Verify the extract route enforces upload size limits."""
@@ -579,6 +582,8 @@ class TestPromptInjectionDefenses:
         assert SkillExtractor._MAX_JD_CHARS == 50_000
 
 
+@pytest.mark.web
+@pytest.mark.skipif(importlib.util.find_spec("fastapi") is None, reason="requires agentforge[web]")
 class TestThreadPoolCap:
     def test_app_has_executor(self):
         """The app should have a bounded thread pool executor."""

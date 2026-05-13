@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
 
 import pytest
+
+collect_ignore: list[str] = []
+if importlib.util.find_spec("sqlalchemy") is None:
+    collect_ignore.append("test_db.py")
+if importlib.util.find_spec("fastapi") is None:
+    collect_ignore.append("test_forge_routes.py")
 
 from agentforge.models.extracted_skills import (
     ExtractionResult,

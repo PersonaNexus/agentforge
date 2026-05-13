@@ -270,6 +270,22 @@ agentforge prompt-diff v1/SKILL.md v2/SKILL.md
 
 All quality commands support `--format json` for CI integration and return exit code 1 on failure.
 
+## Development quality gates
+
+The default CI job intentionally exercises the core CLI path without optional web/database extras. Web/API tests are marked `web` and are skipped from collection unless `agentforge[web]` dependencies are installed.
+
+Run the same gates locally with `uv`:
+
+```bash
+uv sync --dev
+uv run pytest -q
+uv run ruff check src/agentforge/web/__init__.py tests/test_cli_stability.py
+uv run mypy --follow-imports=skip --ignore-missing-imports src/agentforge/utils.py src/agentforge/pipeline/forge_pipeline.py
+uv run --with build python -m build
+```
+
+Current baseline note: repo-wide Ruff and strict mypy still have pre-existing debt, so CI starts with a narrow calibrated gate plus full core tests. Expand those scopes as cleanup lands.
+
 ## Wiki-memory (structured knowledge layer)
 
 Adds a durable, cross-linked knowledge layer alongside each agent's flat episodic MEMORY. Two-tier memory: episodic (MEMORY.md) + structured wiki pages.
