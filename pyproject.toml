@@ -70,6 +70,9 @@ packages = ["src/agentforge"]
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "--cov=agentforge --cov-report=term-missing"
+markers = [
+    "web: tests that require the optional agentforge[web] dependency group",
+]
 
 [tool.ruff]
 target-version = "py312"

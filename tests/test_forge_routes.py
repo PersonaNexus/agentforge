@@ -10,6 +10,8 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
+pytestmark = pytest.mark.web
+
 from agentforge.web.app import create_app
 from agentforge.web.jobs import Job, JobStore
 

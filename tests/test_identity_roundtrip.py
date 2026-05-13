@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import tempfile
 from pathlib import Path
@@ -183,6 +184,8 @@ class TestRoundTrip:
 # ------------------------------------------------------------------
 
 
+@pytest.mark.web
+@pytest.mark.skipif(importlib.util.find_spec("fastapi") is None, reason="requires agentforge[web]")
 class TestImportRoute:
     """Test the POST /api/forge/import-identity endpoint."""
 

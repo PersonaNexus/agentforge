@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  core:
+    name: Core quality gates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install core dev dependencies
+        run: uv sync --dev
+
+      - name: Run core test suite
+        run: uv run pytest -q
+
+      - name: Run calibrated Ruff gate
+        run: uv run ruff check src/agentforge/web/__init__.py tests/test_cli_stability.py
+
+      - name: Run calibrated mypy gate
+        run: >-
+          uv run mypy --follow-imports=skip --ignore-missing-imports
+          src/agentforge/utils.py src/agentforge/pipeline/forge_pipeline.py
+
+      - name: Build package
+        run: uv run --with build python -m build

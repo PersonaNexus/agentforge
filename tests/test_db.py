@@ -7,6 +7,8 @@ import time
 
 import pytest
 from sqlalchemy import create_engine
+
+pytestmark = pytest.mark.web
 from sqlalchemy.orm import sessionmaker
 
 from agentforge.web.db.engine import init_db
