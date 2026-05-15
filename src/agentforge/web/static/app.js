@@ -1095,11 +1095,15 @@ function renderForgeResults(data, jobId, salaryMin, salaryMax) {
         </div>`;
     }
 
-    // ZIP download (always available — includes SKILL.md + identity YAML + any references)
+    // ZIP download (includes SKILL.md + identity YAML + references + PersonaNexus package when present)
     if (data.skill_folder) {
+        const zipLabel = data.personanexus_package ? 'Download PersonaNexus Package (ZIP)' : 'Download Skill Folder (ZIP)';
+        const zipHint = data.personanexus_package
+            ? 'Deployment package: agent_identity.yaml + compiled_prompt.md + deployment.yaml + README.md + skills'
+            : `Complete folder: SKILL.md + identity YAML${data.clawhub_skill ? ' + ClawHub' : ''} — ready to drop into <code>.claude/skills/</code>`;
         html += `<div class="forge-download-hero" id="forge-zip-download" style="margin-top:0.5rem;">
-            <a href="/api/forge/${jobId}/download/zip" role="button" class="secondary outline">Download Skill Folder (ZIP)</a>
-            <div class="forge-download-hint">Complete folder: SKILL.md + identity YAML${data.clawhub_skill ? ' + ClawHub' : ''} — ready to drop into <code>.claude/skills/</code></div>
+            <a href="/api/forge/${jobId}/download/zip" role="button" class="secondary outline">${zipLabel}</a>
+            <div class="forge-download-hint">${zipHint}</div>
         </div>`;
     }
 

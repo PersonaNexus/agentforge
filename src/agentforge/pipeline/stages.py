@@ -161,7 +161,7 @@ class GenerateStage(PipelineStage):
             )
 
         # Claude Code skill folder
-        if output_format in ("claude_code", "both"):
+        if output_format in ("claude_code", "both", "personanexus"):
             skill_folder_gen = SkillFolderGenerator()
             context["skill_folder"] = skill_folder_gen.generate(
                 context["extraction"],
@@ -455,6 +455,27 @@ class OpenClawCompileStage(PipelineStage):
             skill_folder=context.get("skill_folder"),
             schedule=context.get("cron_schedule"),
             cron_config=context.get("cron_config_dict"),
+        )
+        return context
+
+
+class PersonaNexusDeploymentCompileStage(PipelineStage):
+    """Compile pipeline output into a PersonaNexus deployment package."""
+
+    name = "personanexus_deployment_compile"
+
+    def run(self, context: dict[str, Any]) -> dict[str, Any]:
+        from agentforge.generation.personanexus_deployment import (
+            PersonaNexusDeploymentCompiler,
+        )
+
+        compiler = PersonaNexusDeploymentCompiler()
+        context["personanexus_deployment"] = compiler.compile(
+            extraction=context["extraction"],
+            identity_yaml=context["identity_yaml"],
+            identity=context["identity"],
+            methodology=context.get("methodology"),
+            skill_folder=context.get("skill_folder"),
         )
         return context
 

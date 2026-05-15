@@ -34,6 +34,7 @@ _STAGE_MESSAGES = {
     "deep_analyze": "Running deep gap analysis...",
     "tool_map": "Mapping tools & workflows...",
     "team_compose": "Composing agent team...",
+    "personanexus_deployment_compile": "Packaging PersonaNexus deployment files...",
 }
 
 
@@ -92,7 +93,9 @@ def _run_forge(
         job.status = "running"
 
         # Build pipeline
-        if mode == "quick":
+        if output_format == "personanexus":
+            pipeline = ForgePipeline.personanexus_deployment()
+        elif mode == "quick":
             pipeline = ForgePipeline.quick()
         elif mode == "deep":
             pipeline = ForgePipeline.deep_analysis()
@@ -172,6 +175,13 @@ def _run_forge(
             "skill_gaps": skill_gaps,
         }
 
+        pn = context.get("personanexus_deployment")
+        if pn:
+            result["personanexus_package"] = {
+                "agent_name": pn.agent_name,
+                "files": pn.file_map(),
+            }
+
         # Tool profile
         tool_profile = context.get("tool_profile")
         if tool_profile:
@@ -231,7 +241,7 @@ async def import_identity(
     if suffix not in (".yaml", ".yml"):
         raise HTTPException(status_code=422, detail="Only YAML files are supported")
 
-    if output_format not in ("claude_code", "clawhub", "both"):
+    if output_format not in ("claude_code", "clawhub", "both", "personanexus"):
         raise HTTPException(status_code=422, detail=f"Invalid output_format: {output_format}")
 
     content = await file.read()
@@ -259,8 +269,9 @@ async def import_identity(
     }
 
     supplementary_files: dict[str, str] = {}
+    sf = None
 
-    if output_format in ("claude_code", "both"):
+    if output_format in ("claude_code", "both", "personanexus"):
         skill_folder_gen = SkillFolderGenerator()
         sf = skill_folder_gen.generate(
             extraction, identity,
@@ -274,6 +285,23 @@ async def import_identity(
             "skill_md": sf.skill_md_with_references(),
             "skill_name": sf.skill_name,
             "supplementary_files": supplementary_files,
+        }
+
+    if output_format == "personanexus":
+        from agentforge.generation.personanexus_deployment import (
+            PersonaNexusDeploymentCompiler,
+        )
+
+        pn = PersonaNexusDeploymentCompiler().compile(
+            extraction=extraction,
+            identity_yaml=identity_yaml,
+            identity=identity,
+            methodology=methodology,
+            skill_folder=sf,
+        )
+        result_update["personanexus_package"] = {
+            "agent_name": pn.agent_name,
+            "files": pn.file_map(),
         }
 
     if output_format in ("clawhub", "both"):
@@ -391,7 +419,7 @@ async def start_forge(
     if mode not in ("default", "quick", "deep"):
         raise HTTPException(status_code=422, detail=f"Invalid mode: {mode}")
 
-    if output_format not in ("claude_code", "clawhub", "both"):
+    if output_format not in ("claude_code", "clawhub", "both", "personanexus"):
         raise HTTPException(status_code=422, detail=f"Invalid output_format: {output_format}")
 
     # Save uploaded file
@@ -481,8 +509,16 @@ async def forge_download_zip(job_id: str, request: Request) -> StreamingResponse
 
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        written_entries: set[str] = set()
+
+        def write_once(path: str, content: str) -> None:
+            if path in written_entries:
+                return
+            written_entries.add(path)
+            zf.writestr(path, content)
+
         # Main SKILL.md
-        zf.writestr(f"{skill_name}/SKILL.md", sf_data["skill_md"])
+        write_once(f"{skill_name}/SKILL.md", sf_data["skill_md"])
 
         # Supplementary reference files
         for rel_path, content in sf_data.get("supplementary_files", {}).items():
@@ -492,17 +528,25 @@ async def forge_download_zip(job_id: str, request: Request) -> StreamingResponse
             if len(parts) > 1:
                 safe_parts = [safe_filename(p) for p in parts]
                 safe_entry = f"{skill_name}/{'/'.join(safe_parts)}"
-            zf.writestr(safe_entry, content)
+            write_once(safe_entry, content)
 
         # ClawHub skill if available
         ch_data = job.result.get("clawhub_skill")
         if ch_data:
-            zf.writestr(f"{skill_name}/CLAWHUB_SKILL.md", ch_data["skill_md"])
+            write_once(f"{skill_name}/CLAWHUB_SKILL.md", ch_data["skill_md"])
 
         # Identity YAML
         identity_yaml = job.result.get("identity_yaml", "")
         if identity_yaml:
-            zf.writestr(f"{skill_name}/agent_identity.yaml", identity_yaml)
+            write_once(f"{skill_name}/agent_identity.yaml", identity_yaml)
+
+        # PersonaNexus deployment package if available
+        pn_data = job.result.get("personanexus_package")
+        if pn_data:
+            package_name = safe_filename(pn_data.get("agent_name", skill_name)) or skill_name
+            for rel_path, content in pn_data.get("files", {}).items():
+                safe_parts = [safe_filename(p) for p in Path(rel_path).parts]
+                write_once(f"{package_name}/{'/'.join(safe_parts)}", content)
 
     buffer.seek(0)
 

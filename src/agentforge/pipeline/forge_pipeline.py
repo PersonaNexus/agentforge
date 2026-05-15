@@ -19,6 +19,7 @@ from agentforge.pipeline.stages import (
     MethodologyStage,
     MultiIngestStage,
     OpenClawCompileStage,
+    PersonaNexusDeploymentCompileStage,
     PipelineStage,
     SupplementScoreStage,
     TeamComposeStage,
@@ -154,6 +155,23 @@ class ForgePipeline:
         pipeline.add_stage(TeamComposeStage())
         pipeline.add_stage(CronEnrichStage())
         pipeline.add_stage(OpenClawCompileStage())
+        return pipeline
+
+    @classmethod
+    def personanexus_deployment(cls) -> "ForgePipeline":
+        """Full pipeline with PersonaNexus deployment package output."""
+        pipeline = cls()
+        pipeline.add_stage(IngestStage())
+        pipeline.add_stage(AnonymizeStage())
+        pipeline.add_stage(ExtractStage())
+        pipeline.add_stage(MethodologyStage())
+        pipeline.add_stage(MapStage())
+        pipeline.add_stage(CultureStage())
+        pipeline.add_stage(GenerateStage())
+        pipeline.add_stage(ToolMapStage())
+        pipeline.add_stage(AnalyzeStage())
+        pipeline.add_stage(TeamComposeStage())
+        pipeline.add_stage(PersonaNexusDeploymentCompileStage())
         return pipeline
 
     @classmethod

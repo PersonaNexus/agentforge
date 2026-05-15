@@ -207,7 +207,9 @@ def forge(
             "Deployment target. Empty/'claude-code' (default): full "
             "Claude-Code-ready output incl. identity.yaml. 'openclaw': "
             "OpenClaw-style SOUL.md/STYLE.md/personality.json, identity.yaml "
-            "skipped (decorative for OpenClaw runtimes). 'plain': minimum "
+            "skipped (decorative for OpenClaw runtimes). 'personanexus': "
+            "deployment-ready PersonaNexus package with identity, compiled prompt, "
+            "manifest, README, and optional skills. 'plain': minimum "
             "output — analysis + SKILL.md only, no identity.yaml, no "
             "personality.json (for runtimes that load only their own SOUL "
             "or want forge as an analysis-only step)."
@@ -248,6 +250,8 @@ def forge(
         + (with --skill-folder) Claude Code skill folder
       - 'openclaw': identity.yaml suppressed; OpenClaw files (SOUL.md,
         STYLE.md, personality.json) generated for OpenClaw runtimes
+      - 'personanexus': PersonaNexus deployment package with identity,
+        compiled prompt, deployment manifest, README, and optional skills
       - 'plain': identity.yaml suppressed; analysis output + full agent
         profile SKILL.md only — for runtimes that load only their own
         SOUL.md or want forge as an analysis-only step
@@ -259,6 +263,7 @@ def forge(
         agentforge forge resume.pdf --culture startup.yaml -d ./agents
         agentforge forge posting.md --quick --no-skill-file
         agentforge forge job.txt --target openclaw -d ./openclaw-agents/
+        agentforge forge job.txt --target personanexus -d ./personanexus-agents/
         agentforge forge job.txt --target plain  # minimum output, no decorative files
         agentforge forge job.txt --target plain --keep-identity-yaml
         agentforge forge job.txt --mode cron --schedule "0 8 * * *"
@@ -318,7 +323,7 @@ def forge(
                     raise typer.Exit(code=0)
 
     # Validate --target
-    _VALID_TARGETS = {"", "claude-code", "openclaw", "plain"}
+    _VALID_TARGETS = {"", "claude-code", "openclaw", "personanexus", "plain"}
     if target not in _VALID_TARGETS:
         console.print(
             f"[red]Error:[/red] Unknown --target {target!r}. "
@@ -329,6 +334,8 @@ def forge(
     # Build pipeline
     if target == "openclaw":
         pipeline = ForgePipeline.openclaw()
+    elif target == "personanexus":
+        pipeline = ForgePipeline.personanexus_deployment()
     elif mode == "cron":
         pipeline = ForgePipeline.cron()
     elif quick_mode:
@@ -362,6 +369,9 @@ def forge(
         console.print(f"[blue]Mode:[/blue] cron (schedule: {context['cron_schedule']})")
     if target == "openclaw":
         console.print(f"[blue]Target:[/blue] OpenClaw")
+    elif target == "personanexus":
+        console.print(f"[blue]Target:[/blue] PersonaNexus deployment package")
+        context["output_format"] = "personanexus"
     elif target == "plain":
         console.print(f"[blue]Target:[/blue] plain (analysis-only, decorative files suppressed)")
     if supplement:
@@ -518,6 +528,21 @@ def forge(
             f"  [dim]{oc.agent_name}.SOUL.md, {oc.agent_name}.STYLE.md, "
             f"{oc.agent_name}.personality.json, {oc.agent_name}-skills/[/dim]\n"
             f"  [dim]Ready to drop into OpenClaw workspace[/dim]"
+        )
+
+    # Save PersonaNexus deployment package
+    if "personanexus_deployment" in context:
+        pn = context["personanexus_deployment"]
+        package_dir = safe_rel_path(output_dir, pn.agent_name)
+        package_dir.mkdir(parents=True, exist_ok=True)
+        for rel_path, content in pn.file_map().items():
+            out_path = safe_rel_path(package_dir, rel_path)
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out_path.write_text(content)
+        console.print(
+            f"[green]PersonaNexus deployment package saved:[/green] {package_dir}/\n"
+            f"  [dim]agent_identity.yaml, compiled_prompt.md, deployment.yaml, README.md[/dim]\n"
+            f"  [dim]Validate with: personanexus validate agent_identity.yaml[/dim]"
         )
 
     # Build blueprint
