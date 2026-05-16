@@ -27,6 +27,56 @@ from agentforge.models.job_description import JDSection, JDSource, JobDescriptio
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
+# ---------------------------------------------------------------------------
+# Re-usable factory for MethodologyExtraction (mirrors test_enhancements.py)
+# ---------------------------------------------------------------------------
+
+from agentforge.models.extracted_skills import (
+    Heuristic,
+    MethodologyExtraction,
+    OutputTemplate,
+    QualityCriterion,
+    TriggerTechniqueMapping,
+)
+
+
+def _make_sample_methodology() -> MethodologyExtraction:
+    """Factory for a canonical sample methodology extraction.
+
+    Mirrors ``_make_sample_extraction`` in its scope so that deployment-
+    artifact tests can compose a fully-enriched compile context without
+    duplicating data.
+    """
+    return MethodologyExtraction(
+        heuristics=[
+            Heuristic(
+                trigger="When evaluating data pipeline performance",
+                procedure="1. Check throughput 2. Check latency 3. Compare baselines",
+                source_responsibility="Monitor pipeline performance",
+            ),
+        ],
+        trigger_mappings=[
+            TriggerTechniqueMapping(
+                trigger_pattern="Evaluate pipeline",
+                technique="Use throughput and latency metrics",
+                output_format="Markdown table",
+            ),
+        ],
+        output_templates=[
+            OutputTemplate(
+                name="Pipeline Report",
+                when_to_use="After pipeline evaluation",
+                template="# Pipeline Report\n## Throughput\n## Latency",
+            ),
+        ],
+        quality_criteria=[
+            QualityCriterion(
+                criterion="Includes quantified metrics",
+                description="All findings should include measurable data",
+            ),
+        ],
+    )
+
 
 @pytest.fixture
 def fixtures_dir() -> Path:
@@ -135,3 +185,75 @@ def _make_sample_extraction() -> ExtractionResult:
 @pytest.fixture
 def sample_extraction() -> ExtractionResult:
     return _make_sample_extraction()
+
+
+@pytest.fixture
+def sample_methodology() -> MethodologyExtraction:
+    return _make_sample_methodology()
+
+
+# ---------------------------------------------------------------------------
+# Deployment-artifact fixtures
+# ---------------------------------------------------------------------------
+
+from agentforge.generation.identity_generator import IdentityGenerator
+from agentforge.generation.openclaw_compiler import OpenClawCompiler, OpenClawOutput
+from personanexus.types import AgentIdentity
+
+
+@pytest.fixture(scope="session")
+def _session_extraction() -> ExtractionResult:
+    """Session-scoped extraction — avoids rebuilding for every test."""
+    return _make_sample_extraction()
+
+
+@pytest.fixture(scope="session")
+def compiled_identity(_session_extraction: ExtractionResult) -> tuple[AgentIdentity, str]:
+    """Session-scoped (identity, yaml_str) from the standard sample extraction.
+
+    Use this when you need the PersonaNexus AgentIdentity object or its YAML
+    without the full OpenClaw compile step.
+    """
+    generator = IdentityGenerator()
+    return generator.generate(_session_extraction)
+
+
+@pytest.fixture(scope="session")
+def deployment_artifact(
+    _session_extraction: ExtractionResult,
+    compiled_identity: tuple[AgentIdentity, str],
+) -> OpenClawOutput:
+    """Session-scoped fully-compiled OpenClaw deployment artifact.
+
+    Provides the canonical ``OpenClawOutput`` produced from the standard
+    ``sample_extraction`` so deployment-artifact tests share a single compiled
+    instance across the session.  Tests that mutate state should work from a
+    fresh compile instead.
+
+    Covers the minimal (no methodology, no skill folder) path — the most
+    common public-deployment scenario.  For enriched-path coverage use
+    ``deployment_artifact_with_methodology`` or build inline.
+    """
+    identity, yaml_str = compiled_identity
+    compiler = OpenClawCompiler()
+    return compiler.compile(
+        extraction=_session_extraction,
+        identity_yaml=yaml_str,
+        identity=identity,
+    )
+
+
+@pytest.fixture(scope="session")
+def deployment_artifact_with_methodology(
+    _session_extraction: ExtractionResult,
+    compiled_identity: tuple[AgentIdentity, str],
+) -> OpenClawOutput:
+    """Session-scoped deployment artifact compiled with full methodology enrichment."""
+    identity, yaml_str = compiled_identity
+    compiler = OpenClawCompiler()
+    return compiler.compile(
+        extraction=_session_extraction,
+        identity_yaml=yaml_str,
+        identity=identity,
+        methodology=_make_sample_methodology(),
+    )
