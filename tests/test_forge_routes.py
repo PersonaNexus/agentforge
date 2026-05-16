@@ -82,6 +82,7 @@ def _make_methodology_dict() -> dict:
 def _make_job_result(
     include_clawhub: bool = False,
     supplementary_files: dict[str, str] | None = None,
+    include_personanexus: bool = False,
 ) -> dict:
     """Build a complete job result dict like the pipeline produces."""
     result: dict = {
@@ -110,6 +111,16 @@ def _make_job_result(
     }
     if include_clawhub:
         result["clawhub_skill"] = _make_clawhub_result()
+    if include_personanexus:
+        result["personanexus_package"] = {
+            "agent_name": "senior-data-engineer",
+            "files": {
+                "agent_identity.yaml": result["identity_yaml"],
+                "compiled_prompt.md": "# Senior Data Engineer prompt",
+                "deployment.yaml": "runtime: personanexus\n",
+                "README.md": "# Senior Data Engineer",
+            },
+        }
     return result
 
 
@@ -173,6 +184,14 @@ def completed_job_with_refs(store) -> Job:
     return job
 
 
+@pytest.fixture
+def completed_job_with_personanexus(store) -> Job:
+    job = store.create()
+    job.status = "done"
+    job.result = _make_job_result(include_personanexus=True)
+    return job
+
+
 # ===================================================================
 # ZIP DOWNLOAD TESTS
 # ===================================================================
@@ -229,6 +248,16 @@ class TestZipDownload:
             names = zf.namelist()
             assert "senior-data-engineer/references/work-examples.md" in names
             assert "senior-data-engineer/references/frameworks.md" in names
+
+    def test_zip_contains_personanexus_package(self, client, completed_job_with_personanexus):
+        resp = client.get(f"/api/forge/{completed_job_with_personanexus.id}/download/zip")
+        buf = io.BytesIO(resp.content)
+        with zipfile.ZipFile(buf) as zf:
+            names = zf.namelist()
+            assert "senior-data-engineer/compiled_prompt.md" in names
+            assert "senior-data-engineer/deployment.yaml" in names
+            assert "senior-data-engineer/README.md" in names
+            assert len(names) == len(set(names))
 
     def test_zip_file_contents_match(self, client, completed_job):
         resp = client.get(f"/api/forge/{completed_job.id}/download/zip")
