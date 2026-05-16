@@ -324,10 +324,10 @@ def forge(
 
     # Validate --target
     VALID_TARGETS = {"", "claude-code", "openclaw", "personanexus", "plain"}
-    if target not in _VALID_TARGETS:
+    if target not in VALID_TARGETS:
         console.print(
             f"[red]Error:[/red] Unknown --target {target!r}. "
-            f"Expected one of: {', '.join(sorted(t for t in _VALID_TARGETS if t))}."
+            f"Expected one of: {', '.join(sorted(t for t in VALID_TARGETS if t))}."
         )
         raise typer.Exit(code=1)
 
