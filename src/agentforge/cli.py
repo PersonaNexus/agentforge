@@ -323,7 +323,7 @@ def forge(
                     raise typer.Exit(code=0)
 
     # Validate --target
-    _VALID_TARGETS = {"", "claude-code", "openclaw", "personanexus", "plain"}
+    VALID_TARGETS = {"", "claude-code", "openclaw", "personanexus", "plain"}
     if target not in _VALID_TARGETS:
         console.print(
             f"[red]Error:[/red] Unknown --target {target!r}. "
