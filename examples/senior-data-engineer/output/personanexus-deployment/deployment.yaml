@@ -1,0 +1,28 @@
+schema_version: '1.0'
+runtime: personanexus
+generated_by: agentforge
+generated_at: '2026-05-18T00:00:00Z'
+agent:
+  id: agt_senior_data_engineer_001
+  name: SeniorDataEngineer
+  slug: senior-data-engineer
+  role: Senior Data Engineer
+  domain: Data Engineering
+files:
+  identity: agent_identity.yaml
+  compiled_prompt: compiled_prompt.md
+  readme: README.md
+  skill_folder: senior-data-engineer-skills/
+commands:
+  validate: personanexus validate agent_identity.yaml
+  compile: personanexus compile agent_identity.yaml --target text
+  analyze: personanexus analyze agent_identity.yaml
+readiness_checks:
+- Run the validate command before deployment.
+- Review compiled_prompt.md for role fit and guardrail coverage.
+- Attach or install the skill folder when the target runtime supports skills.
+methodology:
+  heuristics: 1
+  trigger_mappings: 1
+  output_templates: 1
+  quality_criteria: 1

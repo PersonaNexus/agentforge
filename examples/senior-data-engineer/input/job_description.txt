@@ -1,0 +1,42 @@
+# Senior Data Engineer
+
+## Company
+Acme Technologies
+
+## Location
+San Francisco, CA (Hybrid)
+
+## About the Role
+We are looking for a Senior Data Engineer to design, build, and maintain our data infrastructure. You will work closely with data scientists, analysts, and product teams to ensure reliable, scalable data pipelines that power our analytics and ML platforms.
+
+## Responsibilities
+- Design and implement scalable ETL/ELT pipelines using Apache Spark, Airflow, and dbt
+- Build and maintain data warehouse architecture on Snowflake and BigQuery
+- Develop real-time streaming solutions using Kafka and Flink
+- Establish data quality frameworks with Great Expectations and custom validation
+- Collaborate with data scientists to operationalize ML models
+- Mentor junior engineers and conduct code reviews
+- Own data infrastructure reliability and on-call rotation
+- Write technical documentation and data dictionaries
+
+## Requirements
+- 5+ years of experience in data engineering or related field
+- Strong proficiency in Python and SQL
+- Experience with cloud platforms (AWS, GCP, or Azure)
+- Hands-on experience with Apache Spark, Airflow, or similar tools
+- Knowledge of data modeling (star schema, data vault)
+- Bachelor's degree in Computer Science, Engineering, or related field
+
+## Preferred Qualifications
+- Experience with streaming technologies (Kafka, Flink, Kinesis)
+- Familiarity with dbt and modern data stack tools
+- Experience with containerization (Docker, Kubernetes)
+- Knowledge of data governance and privacy regulations (GDPR, CCPA)
+- Contributions to open-source data projects
+
+## Benefits
+- Competitive salary ($180K - $240K)
+- Equity package
+- Health, dental, and vision insurance
+- 401(k) with company match
+- Flexible PTO
