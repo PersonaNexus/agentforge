@@ -69,6 +69,25 @@ agentforge team job_posting.txt -d ./team-output
 agentforge test job_posting.txt
 ```
 
+## Examples & showcase
+
+Public example package (sanitized):
+
+- [Senior Data Engineer example](examples/senior-data-engineer/README.md)
+
+![AgentForge example demo](docs/assets/agentforge-example-demo.gif)
+
+Reproduce the checked-in example artifacts locally:
+
+```bash
+uv sync --dev
+uv run python scripts/generate_example_artifacts.py
+```
+
+Want to add your own example? Use the showcase contribution path:
+
+- [Examples & Showcase guide](docs/showcase.md)
+
 ## Python API
 
 ```python
@@ -269,6 +288,12 @@ agentforge prompt-diff v1/SKILL.md v2/SKILL.md
 ```
 
 All quality commands support `--format json` for CI integration and return exit code 1 on failure.
+
+## Telemetry & observability
+
+Telemetry is design-only right now. Collection defaults to off and includes a no-default-exfiltration guarantee.
+
+- [Telemetry design note](docs/telemetry-design.md)
 
 ## Development quality gates
 
